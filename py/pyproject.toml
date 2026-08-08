@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 lituus-lab
+[build-system]
+requires = ["setuptools>=77", "wheel", "Cython>=3.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uniimage"
+version = "1.0.0"
+description = "Python binding for the UniImage C library"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+authors = [{ name = "lbartoletti" }]
+keywords = ["image", "raster", "exif", "png", "jpeg"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: C",
+  "Topic :: Multimedia :: Graphics",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/lituus-lab/UniImage"
+Repository = "https://github.com/lituus-lab/UniImage"
+Issues = "https://github.com/lituus-lab/UniImage/issues"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+# Builds py/notebooks/quickstart.ipynb via py/notebooks/build_quickstart.py.
+notebook = ["nbformat>=5", "nbclient>=0.10", "ipykernel"]
+
+[tool.setuptools]
+packages = ["uniimage"]
