@@ -1,0 +1,59 @@
+# build artifacts
+build/
+# bin/ holds the compiled CLI (uniimg) plus its Nim source. Ignore the binary
+# output, track the source. git cannot re-include a file under an excluded
+# directory, so exclude the contents (not the dir) and negate the sources.
+/bin/*
+!/bin/*.nim
+libUniImage.so
+libUniImage.so.*
+libUniImage.dylib
+libUniImage.a
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.so.*
+*.dylib
+*.a
+*.lib
+
+# coverage
+coverage/
+lcov.info
+
+# nim cache
+nimcache/
+rnimcache/
+dnimcache/
+
+# docs output
+pages/
+docs/
+*.html
+nimdoc.out.css
+
+# python binding artifacts (sources tracked; generated + bundled lib not)
+py/uniimage/_core.c
+py/uniimage/*.so
+py/uniimage/libUniImage.so
+py/dist/
+py/build/
+py/_nimsrc/
+py/*.egg-info/
+py/**/__pycache__/
+py/.pytest_cache/
+
+# c test/example binaries
+tests/c/test_uniimage
+examples/c/demo
+
+# os / editor
+.DS_Store
+*~
+.*.swp
+*.dSYM
+
+*.log
+*.core

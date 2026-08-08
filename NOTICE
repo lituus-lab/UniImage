@@ -1,0 +1,34 @@
+UniImage
+Copyright 2026 lituus-lab
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+----------------------------------------------------------------------------
+
+Depends on the main branch of NimContracts
+(github.com/lbartoletti/NimContracts), MIT-licensed.
+
+Palette extraction delegates to UniColor
+(github.com/lituus-lab/UniColor), Apache-2.0-licensed.
+
+
+The `src/UniImage/exif/` subpackage and the EXIF/XMP/IPTC surface in
+`src/UniImage/exif.nim` are migrated from nim-exif
+(github.com/lbartoletti/nim-exif), Apache-2.0. Format codecs are independent
+implementations from public format specifications;
+no third-party codec implementation is vendored.
+
+The WebP implementation was cross-checked against Google's libwebp reference
+implementation (Copyright 2010 Google Inc.), which is BSD-3-Clause licensed
+and accompanied by the WebM Project's royalty-free patent grant. libwebp is
+not vendored or linked by UniImage.
