@@ -2,13 +2,10 @@
 <!-- Copyright 2026 lituus-lab -->
 # UniImage
 
-Pure-Nim raster image engine with C and Python façades. Apache-2.0, DCO.
-UniImage sits above `UniColor` in the dependency DAG and is consumed by
-`UniPercept`, `UniVector`, `UniBarCode`, `UniGlyph`, and `UniMedia`.
-
-The engine provides an image model, EXIF/XMP/IPTC metadata, pure-Nim raster
-codecs, Deflate, pixel processing, the `uniimg` CLI, the stable `ui_` C ABI,
-and a Python binding over that ABI.
+A raster image engine written in Nim, with a C ABI and Python binding.
+UniImage provides an image model, pure-Nim codecs and Deflate, pixel
+processing, EXIF/XMP/IPTC metadata handling, and the `uniimg` command-line
+tool.
 
 ## What's inside
 
@@ -22,6 +19,22 @@ and a Python binding over that ABI.
   octree, and NeuQuant implementations.
 - `UniImage/exif`: EXIF, XMP, IPTC-IIM, MakerNote, thumbnail, and ISOBMFF
   metadata parsing and editing.
+
+## Codec support
+
+| Format | Decode | Encode | Boundary |
+|---|---:|---:|---|
+| PNG | yes | yes | non-interlaced; 8-bit Gray/RGB/RGBA output |
+| JPEG | baseline | yes | 8-bit Gray and YCbCr decode |
+| BMP | yes | yes | uncompressed; 1/4/8/24/32-bit decode |
+| QOI | yes | yes | RGB and RGBA |
+| PNM/PAM | yes | yes | PBM, PGM, PPM, PAM |
+| TGA | yes | yes | call `decodeTga`/pass `FMT_TGA`; no magic signature |
+| PCX | yes | no | indexed and true-color |
+| HDR | yes | no | Radiance RGBE |
+| GIF | yes | no | first frame |
+| WebP | lossless | no | VP8L; see [Codec boundaries](#codec-boundaries) |
+| TIFF | baseline | no | chunky layouts; see [Codec boundaries](#codec-boundaries) |
 
 ## Layout
 
@@ -54,11 +67,43 @@ nimble pyTest         # Cython + pytest
 nimble coverage       # gcov + lcov -> coverage/
 nimble book           # nimib book -> book/index.html
 nimble docs           # book + API reference -> pages/
+nimble checkVGraph     # enforce downward-only imports
 ```
 
 The C ABI builds `--app:staticlib`/`--app:lib --noMain --mm:arc -d:release`
 — **not** `-d:danger`: the ABI parses untrusted image bytes, so Nim's bounds
 checks are kept as defense-in-depth.
+
+## C ABI and Python binding
+
+The hand-written [`UniImage.h`](include/UniImage.h) exposes two stable v1
+namespaces: `ui_exif_*` for metadata and `ui_image_*` for decoded rasters.
+Every entry point validates handles and maps failures to status codes; no Nim
+exception crosses the ABI boundary.
+
+The [`uniimage`](py/README.md) Python package wraps the same ABI. Release
+wheels bundle the native library for Linux, macOS, and Windows on CPython
+3.9–3.14, so installing a wheel needs neither Nim nor a C compiler. The
+[Python quickstart notebook](py/notebooks/quickstart.ipynb) is executed in CI
+against the built wheel.
+
+## Command line
+
+Build the CLI with `nimble uniimg`, then run `bin/uniimg` (or
+`bin/uniimg.exe` on Windows):
+
+```text
+uniimg show photo.jpg --json
+uniimg audit photo.jpg
+uniimg strip photo.jpg photo.clean.jpg
+uniimg convert input.png output.jpg --quality=90
+uniimg resize input.png output.png 1280x720
+uniimg crop input.png output.png 10,20,640x480
+uniimg rotate input.png output.png 90
+```
+
+`xmp`, `thumb`, and `set` cover XMP inspection, embedded-thumbnail extraction,
+and EXIF/IPTC editing. Run `uniimg` without arguments for the complete usage.
 
 ## Codec boundaries
 
@@ -100,7 +145,7 @@ if result.isOk:
 
 The C ABI exposes the result as an immutable `ui_palette` handle containing
 tagged `ui_color` values. Python mirrors it with `Image.extract_palette`,
-`Palette`, and `Color`; all five quantizer options remain explicit.
+`Palette`, and `Color`; all six quantizer options remain explicit.
 
 ## CI
 
@@ -116,7 +161,9 @@ commits or title are not [Conventional Commits](https://www.conventionalcommits.
 The same gates run locally with pre-commit: `pip install pre-commit && pre-commit install`
 (`CONTRIBUTING.md`).
 
-`docs` publishes the generated book and API reference to GitHub Pages.
+The `docs` job always builds the executable book and API reference. Following
+the other Uni* repositories, the separate Pages job publishes them only from
+`main` when the repository is public.
 
 ## The Uni* family
 

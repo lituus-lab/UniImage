@@ -48,6 +48,19 @@ e.set_tag("ImageDescription", "quickstart")
 edited = e.write()
 m = uniimage.read_buffer(edited)
 m.get_tag("Artist"), m.get_tag("ImageDescription")"""),
+    ("md", """## Raster API
+
+Decode a two-pixel PPM buffer, resize it, encode it as PNG, and decode the
+result again. All encoded and pixel buffers are ordinary Python `bytes`."""),
+    ("code", """ppm = b"P6\\n2 1\\n255\\n" + bytes([255, 0, 0, 0, 0, 255])
+image = uniimage.decode_buffer(ppm)
+resized = image.resize(4, 2, uniimage.FILTER_BILINEAR)
+png = resized.encode(uniimage.FMT_PNG)
+roundtrip = uniimage.decode_buffer(png)
+(roundtrip.width, roundtrip.height, roundtrip.channels, png[:4])"""),
+    ("md", "Extract a perceptual palette through UniColor's Wu quantizer:"),
+    ("code", """palette = image.extract_palette(2, "wu")
+len(palette), palette.color_at(0).space_tag"""),
 ]
 
 
