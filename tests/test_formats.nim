@@ -1055,21 +1055,26 @@ proc jpegSeg(marker: byte; payload: seq[byte]): seq[byte] =
   result.add(payload)
 
 proc jpegBuild(width, height, ncomp: int; entropy: seq[byte];
-    sofMarker = 0xC0'u8): seq[byte] =
+    sofMarker = 0xC0'u8; acRun = false): seq[byte] =
   doAssert ncomp in {1, 3}
   result = @[byte 0xFF, 0xD8] # SOI
   # DQT: one 8-bit table (id 0), all values 1.
   var dqt: seq[byte] = @[byte 0x00]
   for _ in 0 ..< 64: dqt.add(0x01'u8)
   result.add(jpegSeg(0xDB'u8, dqt))
-  # DHT: DC table 0 (symbols 0x00, 0x0B; two 1-bit codes) + AC table 0 (EOB).
+  # DHT: DC table 0 (symbols 0x00, 0x0B; two 1-bit codes) + AC table 0 (EOB,
+  # plus RRRR=1/SSSS=1 when `acRun`, so a block can carry a real coefficient).
   var dht: seq[byte] = @[]
   dht.add(0x00'u8) # class 0 (DC), id 0
   dht.add(0x02'u8); for _ in 0 ..< 15: dht.add(0'u8) # counts: 2 codes of length 1
   dht.add(0x00'u8); dht.add(0x0B'u8) # symbols: SSSS=0, SSSS=11
   dht.add(0x10'u8) # class 1 (AC), id 0
-  dht.add(0x01'u8); for _ in 0 ..< 15: dht.add(0'u8) # counts: 1 code of length 1
-  dht.add(0x00'u8) # symbol: EOB
+  if acRun:
+    dht.add(0x02'u8); for _ in 0 ..< 15: dht.add(0'u8) # counts: 2 codes of length 1
+    dht.add(0x00'u8); dht.add(0x11'u8) # symbols: EOB, one zero then SSSS=1
+  else:
+    dht.add(0x01'u8); for _ in 0 ..< 15: dht.add(0'u8) # counts: 1 code of length 1
+    dht.add(0x00'u8) # symbol: EOB
   result.add(jpegSeg(0xC4'u8, dht))
   # SOF0
   var sof: seq[byte] = @[byte 0x08] # precision 8
@@ -1124,6 +1129,51 @@ suite "jpeg decode":
     for k in 0 ..< img.data.len:
       if img.data[k] != 128: ok = false
     check ok
+
+  test "one eighth keeps the DC level and a block becomes one pixel":
+    # A flat block at 128 must survive the reduction: with only the DC
+    # coefficient, the block's single sample is its mean.
+    let img = decodeJpeg(jpegBuild(8, 8, 1, uniformEntropy(1)), jdEighth)
+    check img.width == 1 and img.height == 1
+    check img.colorspace == csGray
+    check img.data == @[128'u8]
+
+  test "one eighth reads the same bitstream as a full decode":
+    # The AC coefficients are skipped, not ignored: a stream carrying them has
+    # to be walked to the end, or the next block starts at the wrong bit.
+    let entropy = @[byte 0xBF, 0xF7]
+    let full = decodeJpeg(jpegBuild(8, 8, 1, entropy))
+    let small = decodeJpeg(jpegBuild(8, 8, 1, entropy), jdEighth)
+    check full.width == 8 and small.width == 1
+    check small.data == @[0'u8]
+
+  test "one eighth walks a block's AC payload, so the next block stays aligned":
+    # Two blocks side by side, the first carrying an actual AC coefficient.
+    # Block 1: DC "0" (diff 0) + AC "1" (RRRR=1, SSSS=1) + magnitude bit "0"
+    # (-1) + AC "0" (EOB)                                        -> 0100
+    # Block 2: DC "1" (SSSS=11) + 11 bits 10000000000 (+1024) + AC "0" (EOB).
+    # Padded with 1-bits: 0100 1 10000000000 0 1111111.
+    let entropy = @[byte 0x4C, 0x00, 0x7F]
+    let j = jpegBuild(16, 8, 1, entropy, acRun = true)
+    let small = decodeJpeg(j, jdEighth)
+    check small.width == 2 and small.height == 1
+    # 128 from a zero DC, 255 from +1024/8 clamped: the second block was read
+    # at the right bit, which only happens if block 1's AC payload was walked.
+    check small.data == @[128'u8, 255'u8]
+    check decodeJpeg(j).width == 16 # the same stream decodes in full
+
+  test "one eighth rounds the size up, so no block is dropped":
+    # 8x8 of blocks over a 12x12 image: two blocks each way, both kept.
+    let j = jpegBuild(12, 12, 1, uniformEntropy(4))
+    check decodeJpeg(j).width == 12
+    let small = decodeJpeg(j, jdEighth)
+    check small.width == 2 and small.height == 2
+
+  test "one eighth of a colour image stays colour":
+    let img = decodeJpeg(jpegBuild(8, 8, 3, uniformEntropy(3)), jdEighth)
+    check img.colorspace == csRgb
+    check img.width == 1 and img.height == 1
+    check img.data.len == 3
 
   test "decodeImage routes JPEG by SOI":
     let img = decodeImage(jpegBuild(8, 8, 1, uniformEntropy(1)))

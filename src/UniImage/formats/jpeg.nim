@@ -134,13 +134,51 @@ proc decodeBlock(b: var Bits; dc, ac: HuffTable; qt: QuantTable;
       inc k
   result = idct(nat)
 
+proc decodeBlockDC(b: var Bits; dc, ac: HuffTable; qt: QuantTable;
+    pred: var int): float32 =
+  ## The one sample an 8x8 block becomes at one eighth scale.
+  ##
+  ## With only the DC coefficient present, the separable IDCT collapses to
+  ## `dc / 8`: every AC term is multiplied by a cosine that sums to zero over
+  ## the block. The AC coefficients are still read, because they carry the
+  ## bitstream forward, but they are neither dequantized nor transformed.
+  let s = decodeSym(dc, b)
+  pred += extend(receive(b, s), s)
+  result = float32(pred) * float32(qt[0]) * 0.125'f32
+  var k = 1
+  while k < 64:
+    let rs = decodeSym(ac, b)
+    let r = rs shr 4
+    let ssss = rs and 0x0F
+    if ssss == 0:
+      if r == 15: k += 16 # ZRL: skip 16 zeros
+      else: break # EOB: rest of the block is zero
+    else:
+      k += r
+      if k >= 64:
+        raise UniImageException(code: uiInvalidArg,
+            msg: "jpeg: AC index out of range")
+      discard receive(b, ssss)
+      inc k
+
 proc clamp8(v: float32): uint8 {.inline.} =
   let x = int(v + 128.5'f32)
   if x < 0: 0'u8 elif x > 255: 255'u8 else: uint8(x)
 
-proc decodeJpeg*(data: openArray[byte]): Image[uint8] =
+type JpegDetail* = enum
+  ## How much of each 8x8 block a decode reconstructs.
+  jdFull   ## every pixel
+  jdEighth ## one pixel per block, from its DC coefficient alone
+
+proc decodeJpeg*(data: openArray[byte];
+                 detail = jdFull): Image[uint8] =
   ## Decode an in-memory baseline JPEG into an 8-bit `Image`. Raises
   ## `UniImageException`.
+  ##
+  ## `jdEighth` returns an image an eighth as wide and as tall, skipping the
+  ## inverse DCT and writing one sample per block. It costs a fraction of a
+  ## full decode and is meant for work that reduces the image anyway --
+  ## perceptual hashing, thumbnails -- not for display.
   requireLen(data, 2, "jpeg: header truncated")
   if data[0] != 0xFF or data[1] != 0xD8:
     raise UniImageException(code: uiUnsupported, msg: "jpeg: bad SOI")
@@ -318,14 +356,21 @@ proc decodeJpeg*(data: openArray[byte]): Image[uint8] =
   let mcuH = vMax * 8
   let mcusX = (width + mcuW - 1) div mcuW
   let mcusY = (height + mcuH - 1) div mcuH
+  # How many samples a block becomes, and therefore the size of everything
+  # downstream: the component buffers, the output, and the ratios that map an
+  # output position back to a component sample.
+  let edge = if detail == jdFull: 8 else: 1
+  let shrink = 8 div edge
+  let outW = (width + shrink - 1) div shrink
+  let outH = (height + shrink - 1) div shrink
   # Per-component sample buffers sized to the MCU grid: each MCU contributes
   # comps[c].h x comps[c].v blocks, so the grid holds mcusX*h x mcusY*v blocks.
   var bufW: seq[int] = newSeq[int](nf)
   var bufH: seq[int] = newSeq[int](nf)
   var cbuf: seq[seq[float32]] = newSeq[seq[float32]](nf)
   for c in 0 ..< nf:
-    bufW[c] = mcusX * comps[c].h * 8
-    bufH[c] = mcusY * comps[c].v * 8
+    bufW[c] = mcusX * comps[c].h * edge
+    bufH[c] = mcusY * comps[c].v * edge
     cbuf[c] = newSeq[float32](bufW[c] * bufH[c])
   var pred: array[4, int]
   var nextRst = 0
@@ -338,14 +383,18 @@ proc decodeJpeg*(data: openArray[byte]): Image[uint8] =
     for mx in 0 ..< mcusX:
       for c in 0 ..< nf:
         for bi in 0 ..< comps[c].h * comps[c].v:
-          let blk = decodeBlock(b, dcTab[comps[c].td], acTab[comps[c].ta],
-              quant[comps[c].qt], pred[c])
           let br = my * comps[c].v + bi div comps[c].h
           let bc = mx * comps[c].h + bi mod comps[c].h
-          let off = br * 8 * bufW[c] + bc * 8
-          for y in 0 .. 7:
-            for x in 0 .. 7:
-              cbuf[c][off + y * bufW[c] + x] = blk[y * 8 + x]
+          let off = br * edge * bufW[c] + bc * edge
+          if detail == jdFull:
+            let blk = decodeBlock(b, dcTab[comps[c].td], acTab[comps[c].ta],
+                quant[comps[c].qt], pred[c])
+            for y in 0 .. 7:
+              for x in 0 .. 7:
+                cbuf[c][off + y * bufW[c] + x] = blk[y * 8 + x]
+          else:
+            cbuf[c][off] = decodeBlockDC(b, dcTab[comps[c].td],
+                acTab[comps[c].ta], quant[comps[c].qt], pred[c])
       inc mcuCount
       if restartInterval > 0 and mcuCount mod restartInterval == 0 and
           nextRst < restarts.len:
@@ -355,12 +404,12 @@ proc decodeJpeg*(data: openArray[byte]): Image[uint8] =
         inc nextRst
 
   let outCs = if nf == 1: csGray else: csRgb
-  result = newImage[uint8](width, height, outCs)
-  for y in 0 ..< height:
-    for x in 0 ..< width:
+  result = newImage[uint8](outW, outH, outCs)
+  for y in 0 ..< outH:
+    for x in 0 ..< outW:
       let yVal = cbuf[0][(y * comps[0].v div vMax) * bufW[0] + (x * comps[0].h div hMax)]
       if nf == 1:
-        result.data[y * width + x] = clamp8(yVal)
+        result.data[y * outW + x] = clamp8(yVal)
       else:
         let cbX = x * comps[1].h div hMax
         let cbY = y * comps[1].v div vMax
@@ -374,7 +423,7 @@ proc decodeJpeg*(data: openArray[byte]): Image[uint8] =
         let r = yL + 1.402'f32 * cr
         let g = yL - 0.344136'f32 * cb - 0.714136'f32 * cr
         let bl = yL + 1.772'f32 * cb
-        let o = (y * width + x) * 3
+        let o = (y * outW + x) * 3
         result.data[o] = clamp8(r)
         result.data[o + 1] = clamp8(g)
         result.data[o + 2] = clamp8(bl)
