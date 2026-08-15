@@ -1093,11 +1093,14 @@ proc jpegBuild(width, height, ncomp: int; entropy: seq[byte];
   result.add(@[byte 0xFF, 0xD9]) # EOI
 
 proc uniformEntropy(nBlocks: int): seq[byte] =
-  # Each block: DC code "0" (SSSS=0) + AC code "0" (EOB) = 2 zero bits.
+  # Each block: DC code "0" (SSSS=0) + AC code "0" (EOB) = 2 zero bits. The
+  # final byte is padded with 1-bits, which no code here starts with, so the
+  # padding cannot read as one more block.
   let bits = 2 * nBlocks
-  doAssert bits <= 8
-  if bits == 8: return @[byte 0x00]
-  return @[byte((1 shl (8 - bits)) - 1)] # zero data bits, 1-bit padding
+  let bytes = (bits + 7) div 8
+  result = newSeq[byte](bytes)
+  let pad = bytes * 8 - bits
+  if pad > 0: result[^1] = byte((1 shl pad) - 1)
 
 suite "jpeg decode":
   test "grayscale 8x8 uniform 128":
@@ -1174,6 +1177,29 @@ suite "jpeg decode":
     check img.colorspace == csRgb
     check img.width == 1 and img.height == 1
     check img.data.len == 3
+
+  test "a large JPEG is reduced, and reports the size it came from":
+    # 64 blocks each way: asking for 8 lets the eighth-scale decode answer.
+    let j = jpegBuild(512, 512, 1, uniformEntropy(64 * 64))
+    let scaled = decodeImageScaled(j, 8)
+    check scaled.image.width == 64 and scaled.image.height == 64
+    check scaled.sourceWidth == 512 and scaled.sourceHeight == 512
+
+  test "a JPEG too small to reduce is decoded in full":
+    let j = jpegBuild(64, 64, 1, uniformEntropy(8 * 8))
+    let scaled = decodeImageScaled(j, 32)
+    check scaled.image.width == 64
+    check scaled.sourceWidth == 64 and scaled.sourceHeight == 64
+
+  test "a format that cannot reduce still reports its own size":
+    let png = encodeImage(newImage[uint8](40, 20, csGray), efPng)
+    let scaled = decodeImageScaled(png, 4)
+    check scaled.image.width == 40 and scaled.image.height == 20
+    check scaled.sourceWidth == 40 and scaled.sourceHeight == 20
+
+  test "decodeImageScaled refuses a maxEdge below one":
+    let j = jpegBuild(8, 8, 1, uniformEntropy(1))
+    expectCode(uiInvalidArg): discard decodeImageScaled(j, 0)
 
   test "decodeImage routes JPEG by SOI":
     let img = decodeImage(jpegBuild(8, 8, 1, uniformEntropy(1)))
