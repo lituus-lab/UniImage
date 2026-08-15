@@ -70,6 +70,60 @@ proc decodeImage*(data: openArray[byte]): Image[uint8] =
   raise UniImageException(code: uiUnsupported,
       msg: "decodeImage: unrecognized format")
 
+type ScaledImage* = object
+  ## A decode that was allowed to reduce, and the size it reduced from.
+  image*: Image[uint8]
+  sourceWidth*, sourceHeight*: int
+
+proc jpegSize(data: openArray[byte]): tuple[width, height: int] =
+  ## Width and height from the frame header, without decoding a single block.
+  ## Returns (0, 0) when no SOF marker is found: the caller then decodes and
+  ## lets the decoder raise on whatever is wrong with the file.
+  var pos = 2
+  while pos + 1 < data.len:
+    # Walk markers the way `decodeJpeg` does, so the two agree on where every
+    # segment starts; whatever it would reject ends this scan at (0, 0).
+    if data[pos] != 0xFF: return (0, 0)
+    inc pos
+    while pos < data.len and data[pos] == 0xFF: inc pos # fill bytes
+    if pos >= data.len: return (0, 0)
+    let marker = data[pos]; inc pos
+    if marker == 0xDA or marker == 0xD9: return (0, 0) # scan or end of image
+    if marker == 0x01 or (marker >= 0xD0 and marker <= 0xD7): continue # standalone
+    if pos + 1 >= data.len: return (0, 0)
+    let segLen = (int(data[pos]) shl 8) or int(data[pos + 1])
+    if segLen < 2 or pos + segLen > data.len: return (0, 0)
+    # SOF0/1/2/3, 5/6/7, 9/10/11, 13/14/15 all carry the frame size here.
+    if marker in {0xC0'u8, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                  0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+      if pos + 6 >= data.len: return (0, 0)
+      let height = (int(data[pos + 3]) shl 8) or int(data[pos + 4])
+      let width = (int(data[pos + 5]) shl 8) or int(data[pos + 6])
+      return (width, height)
+    pos += segLen
+  (0, 0)
+
+proc decodeImageScaled*(data: openArray[byte]; maxEdge: int): ScaledImage =
+  ## Decode as cheaply as the format allows while keeping both edges at least
+  ## `maxEdge`, and report the size before any reduction.
+  ##
+  ## Only JPEG can currently reduce, and only by eight; every other format
+  ## decodes in full. A caller that reduces the image anyway — a perceptual
+  ## hash, a thumbnail — asks for what it needs instead of paying for every
+  ## pixel and throwing them away.
+  if maxEdge < 1:
+    raise UniImageException(code: uiInvalidArg,
+        msg: "decodeImageScaled: maxEdge must be positive")
+  if data.len >= 2 and data[0] == 0xFF and data[1] == 0xD8: # JPEG SOI
+    let size = jpegSize(data)
+    # Compare against what `jdEighth` would return -- one sample per block,
+    # rounded up -- rather than scaling `maxEdge` up, which can overflow.
+    if (size.width + 7) div 8 >= maxEdge and (size.height + 7) div 8 >= maxEdge:
+      return ScaledImage(image: decodeJpeg(data, jdEighth),
+        sourceWidth: size.width, sourceHeight: size.height)
+  let full = decodeImage(data)
+  ScaledImage(image: full, sourceWidth: full.width, sourceHeight: full.height)
+
 # ---- encode dispatcher ----------------------------------------------------
 # The inverse of `decodeImage`: pick an encoder by output format. The caller
 # knows the target format (it has the output path), so dispatch is by an
