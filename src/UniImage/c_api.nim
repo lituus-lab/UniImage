@@ -654,6 +654,23 @@ proc ui_image_pixels(h: pointer; outPtr: ptr ptr uint8;
   outLen[] = csize_t(hh.img.data.len)
   UI_IMAGE_OK
 
+proc ui_image_composite_over(destination, source: pointer; x, y,
+    opacity: cint): cint =
+  ## Mutate an owned RGBA destination with deterministic source-over blending.
+  if not containsHandle(imageHandles, destination) or
+      not containsHandle(imageHandles, source) or opacity < 0 or opacity > 255:
+    return UI_IMAGE_ERR_FORMAT
+  try:
+    imgOf(destination).img.compositeOver(imgOf(source).img, int(x), int(y),
+      uint8(opacity))
+    UI_IMAGE_OK
+  except OutOfMemDefect:
+    UI_IMAGE_ERR_MEM
+  except UniImageException as error:
+    mapImgStatus(error.code)
+  except CatchableError, Defect:
+    UI_IMAGE_ERR_FORMAT
+
 proc ui_image_resize(h: pointer; w, height: cint; filter: cint;
     outHandle: ptr pointer): cint =
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT

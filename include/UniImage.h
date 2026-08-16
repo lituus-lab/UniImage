@@ -224,6 +224,12 @@ int    ui_image_channels(ui_image h);
 int    ui_image_get_colorspace(ui_image h);
 /* Borrow the pixel buffer (no copy). *out_ptr is valid until h is freed. */
 int    ui_image_pixels(ui_image h, unsigned char** out_ptr, size_t* out_len);
+/* Mutate destination by compositing source at (x,y) with straight-alpha
+ * source-over. destination must be RGBA; source may be Gray, RGB or RGBA.
+ * opacity is 0..255. Placement is clipped. Both handles remain caller-owned;
+ * they may be identical and no pixel buffer is reallocated. */
+int    ui_image_composite_over(ui_image destination, ui_image source,
+                               int x, int y, int opacity);
 /* Process ops produce a new handle (free with ui_image_free). */
 int    ui_image_resize(ui_image h, int w, int height, int filter,
                        ui_image* out_handle);
