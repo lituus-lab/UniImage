@@ -73,6 +73,8 @@ cdef extern from "UniImage.h":
     int    ui_image_channels(ui_image h)
     int    ui_image_get_colorspace(ui_image h)
     int    ui_image_pixels(ui_image h, unsigned char** out_ptr, size_t* out_len)
+    int    ui_image_composite_over(ui_image destination, ui_image source,
+                                   int x, int y, int opacity)
     int    ui_image_resize(ui_image h, int w, int height, int filter,
                            ui_image* out_handle)
     int    ui_image_crop(ui_image h, int x, int y, int w, int height,
@@ -189,6 +191,13 @@ def strerror(int code):
     cdef const char* s = ui_exif_strerror(code)
     if s == NULL:
         return f"error {code}"
+    return (<bytes>s).decode("ascii")
+
+
+def image_strerror(int code):
+    cdef const char* s = ui_image_strerror(code)
+    if s == NULL:
+        return f"image error {code}"
     return (<bytes>s).decode("ascii")
 
 
@@ -392,7 +401,7 @@ cdef class Image:
         cdef size_t n = 0
         rc = ui_image_pixels(self._h, &p, &n)
         if rc != 0:
-            raise ValueError(f"pixels failed: {strerror(rc)}")
+            raise ValueError(f"pixels failed: {image_strerror(rc)}")
         if p == NULL or n == 0:
             return b""
         return bytes(<unsigned char[:n]>p)
@@ -402,7 +411,7 @@ cdef class Image:
         cdef size_t out_len = 0
         rc = ui_image_encode(self._h, fmt, quality, &out, &out_len)
         if rc != 0:
-            raise ValueError(f"encode failed: {strerror(rc)}")
+            raise ValueError(f"encode failed: {image_strerror(rc)}")
         try:
             return bytes(<unsigned char[:out_len]>out)
         finally:
@@ -412,16 +421,26 @@ cdef class Image:
         cdef ui_image out = NULL
         rc = ui_image_resize(self._h, w, h, filter, &out)
         if rc != 0:
-            raise ValueError(f"resize failed: {strerror(rc)}")
+            raise ValueError(f"resize failed: {image_strerror(rc)}")
         r = Image()
         r._h = out
         return r
+
+    def composite_over(self, Image source, int x, int y, int opacity=255):
+        """Composite source over this RGBA image in place.
+
+        Source may be Gray, RGB or straight-alpha RGBA. Placement is clipped
+        and opacity is an integer from 0 through 255.
+        """
+        rc = ui_image_composite_over(self._h, source._h, x, y, opacity)
+        if rc != 0:
+            raise ValueError(f"composite_over failed: {image_strerror(rc)}")
 
     def crop(self, int x, int y, int w, int h):
         cdef ui_image out = NULL
         rc = ui_image_crop(self._h, x, y, w, h, &out)
         if rc != 0:
-            raise ValueError(f"crop failed: {strerror(rc)}")
+            raise ValueError(f"crop failed: {image_strerror(rc)}")
         r = Image()
         r._h = out
         return r
@@ -430,7 +449,7 @@ cdef class Image:
         cdef ui_image out = NULL
         rc = ui_image_rotate(self._h, op, &out)
         if rc != 0:
-            raise ValueError(f"rotate failed: {strerror(rc)}")
+            raise ValueError(f"rotate failed: {image_strerror(rc)}")
         r = Image()
         r._h = out
         return r
@@ -440,7 +459,7 @@ cdef class Image:
         cdef ui_image out = NULL
         rc = ui_image_apply_orientation(self._h, orientation, &out)
         if rc != 0:
-            raise ValueError(f"orient failed: {strerror(rc)}")
+            raise ValueError(f"orient failed: {image_strerror(rc)}")
         r = Image()
         r._h = out
         return r
@@ -461,7 +480,9 @@ cdef class Image:
         rc = ui_image_extract_palette(self._h, n, encoded_algo, space, &opts,
                                       &out)
         if rc != 0:
-            raise ValueError(f"palette extraction failed: {strerror(rc)}")
+            raise ValueError(
+                f"palette extraction failed: {image_strerror(rc)}"
+            )
         result = Palette()
         result._h = out
         return result
@@ -482,7 +503,7 @@ def image_from_pixels(int width, int height, data, int colorspace=CS_RGB):
         buf = <const unsigned char*>data
     rc = ui_image_from_pixels(width, height, colorspace, buf, length, &h)
     if rc != 0:
-        raise ValueError(f"image_from_pixels failed: {strerror(rc)}")
+        raise ValueError(f"image_from_pixels failed: {image_strerror(rc)}")
     result = Image()
     result._h = h
     return result
@@ -500,7 +521,7 @@ def decode_buffer(data, fmt=FMT_AUTO):
         buf = <const unsigned char*>data
     rc = ui_image_decode_buffer(buf, length, fmt, &h)
     if rc != 0:
-        raise ValueError(f"decode_buffer failed: {strerror(rc)}")
+        raise ValueError(f"decode_buffer failed: {image_strerror(rc)}")
     r = Image()
     r._h = h
     return r
@@ -517,7 +538,7 @@ def thumbnail(data):
         buf = <const unsigned char*>data
     rc = ui_image_thumbnail(buf, length, &h)
     if rc != 0:
-        raise ValueError(f"thumbnail failed: {strerror(rc)}")
+        raise ValueError(f"thumbnail failed: {image_strerror(rc)}")
     r = Image()
     r._h = h
     return r

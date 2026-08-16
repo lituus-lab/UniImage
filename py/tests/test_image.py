@@ -31,6 +31,57 @@ def test_image_from_pixels_copies_a_valid_buffer():
         uniimage.image_from_pixels(2, 2, pixels[:-1], uniimage.CS_RGB)
 
 
+def test_composite_over_mutates_rgba_with_exact_pixels():
+    destination = uniimage.image_from_pixels(
+        1, 1, bytes([0, 0, 255, 255]), uniimage.CS_RGBA
+    )
+    source = uniimage.image_from_pixels(
+        1, 1, bytes([255, 0, 0, 128]), uniimage.CS_RGBA
+    )
+    assert destination.composite_over(source, 0, 0) is None
+    assert destination.pixels == bytes([128, 0, 127, 255])
+    with pytest.raises(ValueError, match="bad argument"):
+        destination.composite_over(source, 0, 0, 256)
+
+
+def test_composite_over_accepts_rgb_clips_and_self_aliases():
+    destination = uniimage.image_from_pixels(
+        2, 1, bytes(8), uniimage.CS_RGBA
+    )
+    source = uniimage.image_from_pixels(
+        2, 1, bytes([255, 0, 0, 0, 255, 0]), uniimage.CS_RGB
+    )
+    destination.composite_over(source, -1, 0)
+    assert destination.pixels == bytes([0, 255, 0, 255, 0, 0, 0, 0])
+    destination.composite_over(destination, 1, 0)
+    assert destination.pixels == bytes([0, 255, 0, 255, 0, 255, 0, 255])
+    before = destination.pixels
+    destination.composite_over(source, 0, 0, 0)
+    assert destination.pixels == before
+    with pytest.raises(ValueError, match="bad argument"):
+        destination.composite_over(source, 0, 0, -1)
+
+
+def test_composite_over_accepts_gray_source():
+    destination = uniimage.image_from_pixels(
+        1, 1, bytes(4), uniimage.CS_RGBA
+    )
+    source = uniimage.image_from_pixels(1, 1, bytes([80]), uniimage.CS_GRAY)
+    destination.composite_over(source, 0, 0, 128)
+    assert destination.pixels == bytes([80, 80, 80, 128])
+
+
+def test_composite_over_rejects_non_rgba_destination():
+    destination = uniimage.image_from_pixels(
+        1, 1, bytes([0, 0, 0]), uniimage.CS_RGB
+    )
+    source = uniimage.image_from_pixels(
+        1, 1, bytes([255, 0, 0]), uniimage.CS_RGB
+    )
+    with pytest.raises(ValueError):
+        destination.composite_over(source, 0, 0)
+
+
 @pytest.mark.parametrize(
     "algorithm", ["wu", "kmeans", "kmeansPP", "medianCut", "octree", "neuquant"]
 )
