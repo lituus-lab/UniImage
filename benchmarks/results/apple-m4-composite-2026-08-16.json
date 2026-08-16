@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-16",
+  "machine": "Apple M4",
+  "architecture": "arm64",
+  "os": "macosx",
+  "os_version": "26.5.1",
+  "nim": "2.2.10",
+  "build": "-d:release",
+  "canvas": "1920x1080",
+  "runs": 3,
+  "iterations_per_run": 20,
+  "warmup_iterations": 3,
+  "opaque_rgb": {
+    "run_mean_ms": [9.5275166, 9.56779575, 9.5451584],
+    "median_run_mean_ms": 9.5451584,
+    "median_megapixels_per_second": 217.24102556537983
+  },
+  "translucent_rgba": {
+    "run_mean_ms": [13.15301245, 13.1949958, 13.18242705],
+    "median_run_mean_ms": 13.18242705,
+    "median_megapixels_per_second": 157.30032050509243
+  },
+  "half_clipped_rgba": {
+    "run_mean_ms": [7.7466999, 7.75932495, 7.75925],
+    "median_run_mean_ms": 7.75925,
+    "median_megapixels_per_second": 133.6211618390953
+  }
+}
