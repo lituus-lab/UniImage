@@ -72,6 +72,16 @@ task testAll, "debug + release + C ABI":
 task example, "Nim demo":
   exec "nim c -r --path:src -o:build/demo examples/demo.nim"
 
+task benchmarkComposite, "Benchmark deterministic RGBA compositing":
+  exec "nim c -r -d:release --path:src -o:build/benchmark_composite" &
+       " benchmarks/benchmark_composite.nim"
+
+task benchmarkCompositeBaseline, "Run and aggregate three composite benchmarks":
+  exec "nim c -d:release --path:src -o:build/benchmark_composite" &
+       " benchmarks/benchmark_composite.nim"
+  exec "nim c -r -d:release -o:build/run_composite_baseline" &
+       " benchmarks/run_composite_baseline.nim"
+
 task uniimg, "Build the uniimg CLI (metadata inspect/strip; codec convert)":
   exec "nim c --path:src -o:bin/uniimg bin/uniimg.nim"
 
