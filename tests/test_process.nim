@@ -2,6 +2,8 @@
 # Copyright 2026 lituus-lab
 ## process/ tests: resize (nearest/bilinear/box), crop, rotate/flip.
 import std/unittest
+when not defined(release) and not defined(danger):
+  import contracts
 import UniImage/core
 import UniImage/process
 
@@ -15,6 +17,98 @@ proc raisesInvalidArg(p: proc()): bool =
   try: p()
   except UniImageException as e: return e.code == uiInvalidArg
   false
+
+proc rgba(data: openArray[uint8]; w, h: int): Image[uint8] =
+  result = newImage[uint8](w, h, csRgba)
+  for i in 0 ..< data.len: result.data[i] = data[i]
+
+suite "process composite":
+  test "straight alpha source-over is pixel exact":
+    var destination = rgba([0'u8, 0, 255, 255], 1, 1)
+    let source = rgba([255'u8, 0, 0, 128], 1, 1)
+    destination.compositeOver(source, 0, 0)
+    check destination.data == [128'u8, 0, 127, 255]
+
+  test "transparent destination preserves straight source channels":
+    var destination = rgba([0'u8, 0, 0, 0], 1, 1)
+    let source = rgba([10'u8, 20, 30, 128], 1, 1)
+    destination.compositeOver(source, 0, 0)
+    check destination.data == source.data
+
+  test "partial source and destination alpha use the unrounded denominator":
+    var destination = rgba([255'u8, 255, 255, 15], 1, 1)
+    let source = rgba([254'u8, 254, 254, 8], 1, 1)
+    destination.compositeOver(source, 0, 0)
+    check destination.data == [255'u8, 255, 255, 23]
+
+  test "equal straight channels remain equal across partial alpha pairs":
+    for channel in [0'u8, 1, 127, 254, 255]:
+      for sourceAlpha in [0'u8, 1, 7, 8, 15, 127, 254, 255]:
+        for destinationAlpha in [0'u8, 1, 7, 8, 15, 127, 254, 255]:
+          var destination = rgba([channel, channel, channel,
+            destinationAlpha], 1, 1)
+          let source = rgba([channel, channel, channel, sourceAlpha], 1, 1)
+          destination.compositeOver(source, 0, 0)
+          if destination.data[3] > 0:
+            check destination.data[0 .. 2] == [channel, channel, channel]
+
+  test "gray and RGB sources apply global opacity":
+    var destination = rgba([0'u8, 0, 0, 0, 0, 0, 0, 0], 2, 1)
+    let
+      graySource = gray([80'u8], 1, 1)
+      rgbSource = block:
+        var image = newImage[uint8](1, 1, csRgb)
+        image.data = @[10'u8, 20, 30]
+        image
+    destination.compositeOver(graySource, 0, 0, 128)
+    destination.compositeOver(rgbSource, 1, 0, 128)
+    check destination.data == [80'u8, 80, 80, 128, 10, 20, 30, 128]
+
+  test "placement clips every destination edge":
+    let source = rgba([
+      1'u8, 0, 0, 255, 2, 0, 0, 255,
+      3, 0, 0, 255, 4, 0, 0, 255], 2, 2)
+    var destination = rgba(newSeq[uint8](3 * 3 * 4), 3, 3)
+    destination.compositeOver(source, -1, -1)
+    destination.compositeOver(source, 2, 2)
+    check destination.data[0] == 4
+    check destination.data[(2 * 3 + 2) * 4] == 1
+    check destination.data[4] == 0
+
+  test "aliased source is snapshotted before writes":
+    var image = rgba([
+      255'u8, 0, 0, 255,
+      0, 255, 0, 255,
+      0, 0, 255, 255], 3, 1)
+    image.compositeOver(image, 1, 0)
+    check image.data == [
+      255'u8, 0, 0, 255,
+      255, 0, 0, 255,
+      0, 255, 0, 255]
+
+  test "zero opacity and fully clipped placement are no-ops":
+    var destination = rgba([1'u8, 2, 3, 4], 1, 1)
+    let source = rgba([200'u8, 201, 202, 203], 1, 1)
+    destination.compositeOver(source, 0, 0, 0)
+    destination.compositeOver(source, high(int), low(int))
+    check destination.data == [1'u8, 2, 3, 4]
+
+  test "malformed images and non-RGBA destinations are rejected":
+    let source = rgba([1'u8, 2, 3, 4], 1, 1)
+    var rgbDestination = newImage[uint8](1, 1, csRgb)
+    var malformed = source
+    malformed.data.setLen(3)
+    var destination = rgba([0'u8, 0, 0, 0], 1, 1)
+    when defined(release) or defined(danger):
+      check raisesInvalidArg(proc() =
+        rgbDestination.compositeOver(source, 0, 0))
+      check raisesInvalidArg(proc() =
+        destination.compositeOver(malformed, 0, 0))
+    else:
+      expect PreConditionDefect:
+        rgbDestination.compositeOver(source, 0, 0)
+      expect PreConditionDefect:
+        destination.compositeOver(malformed, 0, 0)
 
 suite "process resize":
   test "nearest identity is exact":
