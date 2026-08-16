@@ -71,6 +71,30 @@ nbCode:
   doAssert portrait.data == @[4'u8, 1, 5, 2, 6, 3]
 
 nbText: """
+## Alpha-correct resizing
+
+Nearest-neighbour resizing preserves every byte. Bilinear and box filters
+instead interpolate RGBA in premultiplied-alpha space and return straight
+alpha. Colours stored behind fully transparent pixels therefore cannot create
+halos around a visible edge.
+"""
+
+nbCode:
+  var alphaEdge = newImage[uint8](2, 1, csRgba)
+  alphaEdge.data = @[255'u8, 0, 0, 0, 0, 0, 255, 255]
+  let enlargedEdge = alphaEdge.resize(240, 80, rfBilinear)
+  doAssert enlargedEdge.data[0 .. 3] == @[0'u8, 0, 0, 0]
+  doAssert enlargedEdge.data[^4 .. ^1] == @[0'u8, 0, 255, 255]
+
+nbRawHtml: """
+<figure><img alt="Alpha-correct blue edge resized over transparency"
+style="max-width:100%;image-rendering:pixelated" src="data:image/png;base64,""" &
+  base64.encode(enlargedEdge.encodeImage(efPng)) & """">
+<figcaption>The hidden red transparent pixel contributes no red fringe.</figcaption>
+</figure>
+"""
+
+nbText: """
 ## Straight-alpha compositing
 
 `compositeOver` places Gray, RGB, or straight-alpha RGBA pixels over an RGBA
