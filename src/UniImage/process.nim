@@ -7,9 +7,11 @@ import ./process/resize
 import ./process/crop
 import ./process/rotate
 import ./process/quantize
+import ./process/composite
 
 export core
 export resize
 export crop
 export rotate
 export quantize
+export composite
