@@ -140,6 +140,76 @@ int main(void) {
   assert(ui_image_from_pixels(2, 2, UI_IMAGE_CS_RGB, ppm + 11, 11, &bad) ==
          UI_IMAGE_ERR_FORMAT);
 
+  /* Straight-alpha compositing mutates an owned RGBA handle in place. */
+  static const unsigned char dst_rgba[] = {0x00, 0x00, 0xFF, 0xFF};
+  static const unsigned char src_rgba[] = {0xFF, 0x00, 0x00, 0x80};
+  ui_image composite_dst = NULL;
+  ui_image composite_src = NULL;
+  assert(ui_image_from_pixels(1, 1, UI_IMAGE_CS_RGBA, dst_rgba,
+                              sizeof dst_rgba, &composite_dst) == UI_IMAGE_OK);
+  assert(ui_image_from_pixels(1, 1, UI_IMAGE_CS_RGBA, src_rgba,
+                              sizeof src_rgba, &composite_src) == UI_IMAGE_OK);
+  assert(composite_dst != NULL && composite_src != NULL);
+  unsigned char* composite_before = NULL;
+  size_t composite_before_len = 0;
+  assert(ui_image_pixels(composite_dst, &composite_before,
+                         &composite_before_len) == UI_IMAGE_OK);
+  assert(ui_image_composite_over(composite_dst, composite_src, 0, 0, 255) ==
+         UI_IMAGE_OK);
+  unsigned char* composite_px = NULL;
+  size_t composite_len = 0;
+  assert(ui_image_pixels(composite_dst, &composite_px, &composite_len) ==
+         UI_IMAGE_OK);
+  assert(composite_len == 4 && composite_px[0] == 128 &&
+         composite_px[1] == 0 && composite_px[2] == 127 &&
+         composite_px[3] == 255);
+  assert(composite_px == composite_before && composite_len == composite_before_len);
+  assert(ui_image_composite_over(composite_dst, composite_dst, 0, 0, 255) ==
+         UI_IMAGE_OK);
+  assert(ui_image_pixels(composite_dst, &composite_px, &composite_len) ==
+         UI_IMAGE_OK && composite_px == composite_before);
+  assert(ui_image_composite_over(NULL, composite_src, 0, 0, 255) ==
+         UI_IMAGE_ERR_FORMAT);
+  assert(ui_image_composite_over(composite_dst, NULL, 0, 0, 255) ==
+         UI_IMAGE_ERR_FORMAT);
+  assert(ui_image_composite_over(composite_dst, composite_src, 0, 0, 256) ==
+         UI_IMAGE_ERR_FORMAT);
+  assert(ui_image_composite_over(composite_dst, composite_src, 0, 0, -1) ==
+         UI_IMAGE_ERR_FORMAT);
+  assert(ui_image_composite_over(made, composite_src, 0, 0, 255) ==
+         UI_IMAGE_ERR_FORMAT);
+
+  static const unsigned char transparent_rgba[] = {0, 0, 0, 0};
+  static const unsigned char gray_pixel[] = {80};
+  ui_image clipped_dst = NULL;
+  ui_image gray_src = NULL;
+  assert(ui_image_from_pixels(1, 1, UI_IMAGE_CS_RGBA, transparent_rgba, 4,
+                              &clipped_dst) == UI_IMAGE_OK);
+  assert(ui_image_composite_over(clipped_dst, img, -2, -2, 255) ==
+         UI_IMAGE_OK);
+  unsigned char* clipped_px = NULL;
+  size_t clipped_len = 0;
+  assert(ui_image_pixels(clipped_dst, &clipped_px, &clipped_len) == UI_IMAGE_OK);
+  assert(clipped_len == 4 && clipped_px[0] == 0 && clipped_px[3] == 0);
+  assert(ui_image_composite_over(clipped_dst, img, -1, -1, 255) ==
+         UI_IMAGE_OK);
+  assert(clipped_px[0] == 255 && clipped_px[1] == 255 &&
+         clipped_px[2] == 255 && clipped_px[3] == 255);
+  assert(ui_image_composite_over(clipped_dst, img, 0, 0, 255) == UI_IMAGE_OK);
+  assert(clipped_px[0] == 255 && clipped_px[1] == 0 &&
+         clipped_px[2] == 0 && clipped_px[3] == 255);
+  assert(ui_image_from_pixels(1, 1, UI_IMAGE_CS_GRAY, gray_pixel, 1,
+                              &gray_src) == UI_IMAGE_OK);
+  assert(gray_src != NULL);
+  assert(ui_image_from_pixels(1, 1, UI_IMAGE_CS_RGBA, transparent_rgba, 4,
+                              &bad) == UI_IMAGE_OK);
+  assert(ui_image_composite_over(bad, gray_src, 0, 0, 128) == UI_IMAGE_OK);
+  unsigned char* gray_px = NULL;
+  size_t gray_len = 0;
+  assert(ui_image_pixels(bad, &gray_px, &gray_len) == UI_IMAGE_OK);
+  assert(gray_len == 4 && gray_px[0] == 80 && gray_px[1] == 80 &&
+         gray_px[2] == 80 && gray_px[3] == 128);
+
   /* All historical quantizers are delegated to UniColor and exposed through
    * an immutable palette handle. */
   const char* quantizers[] = {
@@ -248,6 +318,11 @@ int main(void) {
   ui_image_free(tback);
   ui_image_free(oriented);
   ui_image_free(made);
+  ui_image_free(composite_dst);
+  ui_image_free(composite_src);
+  ui_image_free(clipped_dst);
+  ui_image_free(gray_src);
+  ui_image_free(bad);
   ui_image_buffer_free(png, pnglen);
   ui_image_buffer_free(tga, tgalen);
 
