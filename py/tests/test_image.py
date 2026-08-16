@@ -31,6 +31,21 @@ def test_image_from_pixels_copies_a_valid_buffer():
         uniimage.image_from_pixels(2, 2, pixels[:-1], uniimage.CS_RGB)
 
 
+def test_rgba_resize_filters_in_premultiplied_space():
+    image = uniimage.image_from_pixels(
+        2, 1, bytes([255, 0, 0, 0, 0, 0, 255, 255]), uniimage.CS_RGBA
+    )
+    resized = image.resize(3, 1, uniimage.FILTER_BILINEAR)
+    assert resized.pixels == bytes(
+        [0, 0, 0, 0, 0, 0, 255, 128, 0, 0, 255, 255]
+    )
+    assert image.resize(1, 1, uniimage.FILTER_BOX).pixels == bytes(
+        [0, 0, 255, 128]
+    )
+    assert image.resize(2, 1, uniimage.FILTER_NEAREST).pixels == image.pixels
+    assert image.pixels == bytes([255, 0, 0, 0, 0, 0, 255, 255])
+
+
 def test_composite_over_mutates_rgba_with_exact_pixels():
     destination = uniimage.image_from_pixels(
         1, 1, bytes([0, 0, 255, 255]), uniimage.CS_RGBA
