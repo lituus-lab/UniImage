@@ -1,0 +1,52 @@
+{
+  "date": "2026-08-16",
+  "machine": "Apple M4",
+  "architecture": "arm64",
+  "os": "macosx",
+  "os_version": "26.5.1",
+  "nim": "2.2.10",
+  "build": "-d:release --mm:orc",
+  "operation": "weighted-resize",
+  "alpha_semantics": "RGBA filters in premultiplied space and publishes straight alpha",
+  "source": "1024x1024",
+  "target": "800x600",
+  "runs": 3,
+  "iterations_per_run": 10,
+  "warmup_iterations": 3,
+  "rgb": {
+    "run_mean_ms": [
+      25.5941831,
+      25.6373877,
+      25.4667333
+    ],
+    "median_run_mean_ms": 25.5941831,
+    "median_output_megapixels_per_second": 18.754261393089745
+  },
+  "opaque_rgba": {
+    "run_mean_ms": [
+      16.394225199999997,
+      16.576808399999997,
+      16.332041800000002
+    ],
+    "median_run_mean_ms": 16.394225199999997,
+    "median_output_megapixels_per_second": 29.27860232150526
+  },
+  "translucent_rgba": {
+    "run_mean_ms": [
+      16.6130874,
+      16.6218917,
+      16.452570700000003
+    ],
+    "median_run_mean_ms": 16.6130874,
+    "median_output_megapixels_per_second": 28.892883570816583
+  },
+  "translucent_rgba_box": {
+    "run_mean_ms": [
+      19.200470599999996,
+      19.15475,
+      19.136379
+    ],
+    "median_run_mean_ms": 19.15475,
+    "median_output_megapixels_per_second": 25.05905845808481
+  }
+}
