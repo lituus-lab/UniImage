@@ -36,6 +36,19 @@ type
 
 const ChannelCount*: array[Colorspace, int] = [1, 3, 4, 4, 3, 1]
 
+proc validPackedImage*[P](image: Image[P]): bool {.inline.} =
+  ## Return whether dimensions, colorspace, channel count, and packed storage
+  ## describe one complete image without overflowing an `int` length.
+  if image.width <= 0 or image.height <= 0 or
+      image.channels != ChannelCount[image.colorspace]:
+    return false
+  if image.width > high(int) div image.height:
+    return false
+  let pixels = image.width * image.height
+  if pixels > high(int) div image.channels:
+    return false
+  image.data.len == pixels * image.channels
+
 proc newImage*[P](width, height: int; cs: Colorspace = csRgb): Image[
     P] {.contractual.} =
   ## Allocate a zeroed `Image[P]` of `width` x `height` in the requested color

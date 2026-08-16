@@ -4,15 +4,8 @@
 import contracts
 import UniImage/core
 
-proc validPackedImage(image: Image[uint8]): bool {.inline.} =
-  if image.width <= 0 or image.height <= 0 or
-      image.colorspace notin {csGray, csRgb, csRgba} or
-      image.channels != ChannelCount[image.colorspace]:
-    return false
-  if image.width > high(int) div image.height or
-      image.width * image.height > high(int) div image.channels:
-    return false
-  image.data.len == image.width * image.height * image.channels
+proc validCompositeSource(image: Image[uint8]): bool {.inline.} =
+  image.validPackedImage and image.colorspace in {csGray, csRgb, csRgba}
 
 proc invalidArgument(message: string): UniImageException {.inline.} =
   UniImageException(code: uiInvalidArg, msg: message)
@@ -31,14 +24,14 @@ proc compositeOver*(destination: var Image[uint8]; source: Image[uint8];
   ## source were snapshotted before the first write.
   require:
     destination.validPackedImage and destination.colorspace == csRgba
-    source.validPackedImage
+    source.validCompositeSource
   ensure:
     destination.colorspace == csRgba and destination.channels == 4
     destination.validPackedImage
   body:
     if not destination.validPackedImage or destination.colorspace != csRgba:
       raise invalidArgument("compositeOver: destination must be valid RGBA8")
-    if not source.validPackedImage:
+    if not source.validCompositeSource:
       raise invalidArgument("compositeOver: source must be valid Gray/RGB/RGBA8")
     if opacity == 0'u8 or x >= destination.width or y >= destination.height or
         x <= -source.width or y <= -source.height:
