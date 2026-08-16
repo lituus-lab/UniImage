@@ -210,6 +210,21 @@ regression evidence, not cross-machine claims. Exact repeated means and the
 environment are stored in
 `benchmarks/results/apple-m4-composite-2026-08-16.json`.
 
+`nimble benchmarkResizeAlpha` measures complete allocating 1024×1024 to
+800×600 bilinear resizes for RGB, opaque RGBA and translucent RGBA, plus a
+translucent RGBA box downscale.
+`nimble benchmarkResizeAlphaBaseline` performs and validates three independent
+10-iteration runs, then writes `build/resize-alpha-baseline.json`. Unlike the
+compositing benchmark, allocation of every output image is intentionally
+inside the measured operation. On the Apple M4 reference run, median run means
+were 25.5942 ms (18.75 output MPix/s) for RGB bilinear, 16.3942 ms
+(29.28 MPix/s) for opaque RGBA bilinear, 16.6131 ms (28.89 MPix/s) for
+translucent RGBA bilinear and 19.1548 ms (25.06 MPix/s) for translucent RGBA
+box. The specialised RGBA path is faster here than the generic per-channel RGB
+path; these are local regression measurements, not claims about other
+machines. Exact evidence is
+stored in `benchmarks/results/apple-m4-resize-alpha-2026-08-16.json`.
+
 ## AI-assisted contributions
 
 Assistance from AI/LLM tools is welcome on the same terms as any other
