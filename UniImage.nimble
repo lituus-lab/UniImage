@@ -82,6 +82,17 @@ task benchmarkCompositeBaseline, "Run and aggregate three composite benchmarks":
   exec "nim c -r -d:release -o:build/run_composite_baseline" &
        " benchmarks/run_composite_baseline.nim"
 
+task benchmarkResizeAlpha, "Benchmark alpha-correct weighted resizing":
+  exec "nim c -r -d:release --mm:orc --path:src" &
+       " -o:build/benchmark_resize_alpha benchmarks/benchmark_resize_alpha.nim"
+
+task benchmarkResizeAlphaBaseline, "Aggregate three alpha-resize benchmarks":
+  exec "nim c -d:release --mm:orc --path:src" &
+       " -o:build/benchmark_resize_alpha benchmarks/benchmark_resize_alpha.nim"
+  exec "nim c -r -d:release --mm:orc" &
+       " -o:build/run_resize_alpha_baseline" &
+       " benchmarks/run_resize_alpha_baseline.nim"
+
 task uniimg, "Build the uniimg CLI (metadata inspect/strip; codec convert)":
   exec "nim c --path:src -o:bin/uniimg bin/uniimg.nim"
 
