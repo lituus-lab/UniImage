@@ -143,6 +143,84 @@ suite "process resize":
     check r.data[0] == 0 # left edge clamps to src[0]
     check r.data[3] == 100 # right edge clamps to src[1]
 
+  test "bilinear RGBA ignores colours hidden by zero alpha":
+    let image = rgba([
+      255'u8, 0, 0, 0,
+      0, 0, 255, 255], 2, 1)
+    let resized = image.resize(3, 1, rfBilinear)
+    check resized.data == [
+      0'u8, 0, 0, 0,
+      0, 0, 255, 128,
+      0, 0, 255, 255]
+
+  test "box RGBA averages premultiplied colours and alpha":
+    let image = rgba([
+      255'u8, 0, 0, 0,
+      0, 255, 0, 255], 2, 1)
+    check image.resize(1, 1, rfBox).data == [0'u8, 255, 0, 128]
+
+  test "filtered fully transparent RGBA has canonical zero colour":
+    let image = rgba([
+      255'u8, 10, 20, 0,
+      1, 200, 30, 0], 2, 1)
+    check image.resize(3, 1, rfBilinear).data == newSeq[uint8](3 * 4)
+    check image.resize(1, 1, rfBox).data == newSeq[uint8](4)
+
+  test "sub-byte filtered alpha publishes canonical transparent black":
+    let image = rgba([
+      255'u8, 0, 0, 1,
+      0, 0, 0, 0,
+      0, 0, 0, 0], 3, 1)
+    check image.resize(1, 1, rfBox).data == [0'u8, 0, 0, 0]
+
+  test "vertical and two-dimensional RGBA filtering are premultiplied":
+    let vertical = rgba([
+      255'u8, 0, 0, 0,
+      0, 0, 255, 255], 1, 2)
+    check vertical.resize(1, 3, rfBilinear).data == [
+      0'u8, 0, 0, 0,
+      0, 0, 255, 128,
+      0, 0, 255, 255]
+    let square = rgba([
+      255'u8, 0, 0, 0, 0, 0, 255, 255,
+      0, 255, 0, 255, 255, 255, 0, 0], 2, 2)
+    check square.resize(1, 1, rfBox).data == [0'u8, 128, 128, 128]
+
+  test "opaque RGBA filtering matches the RGB channels exactly":
+    var rgb = newImage[uint8](2, 2, csRgb)
+    rgb.data = @[10'u8, 20, 30, 80, 90, 100,
+      140, 150, 160, 220, 230, 240]
+    var opaque = newImage[uint8](2, 2, csRgba)
+    for pixel in 0 ..< 4:
+      for channel in 0 ..< 3:
+        opaque.data[pixel * 4 + channel] = rgb.data[pixel * 3 + channel]
+      opaque.data[pixel * 4 + 3] = 255
+    let
+      rgbResult = rgb.resize(3, 3, rfBilinear)
+      rgbaResult = opaque.resize(3, 3, rfBilinear)
+    for pixel in 0 ..< 9:
+      check rgbaResult.data[pixel * 4 .. pixel * 4 + 2] ==
+        rgbResult.data[pixel * 3 .. pixel * 3 + 2]
+      check rgbaResult.data[pixel * 4 + 3] == 255
+
+  test "nearest RGBA retains caller bytes including hidden colours":
+    let image = rgba([255'u8, 10, 20, 0], 1, 1)
+    check image.resize(2, 2, rfNearest).data == [
+      255'u8, 10, 20, 0, 255, 10, 20, 0,
+      255, 10, 20, 0, 255, 10, 20, 0]
+
+  test "malformed source layouts are rejected at the public boundary":
+    var image = rgba([1'u8, 2, 3, 4], 1, 1)
+    image.channels = 3
+    when defined(release) or defined(danger):
+      check raisesInvalidArg(proc() = discard image.resize(1, 1, rfBilinear))
+      check raisesInvalidArg(proc() = discard image.resize(1, 1, rfNearest))
+    else:
+      expect PreConditionDefect:
+        discard image.resize(1, 1, rfBilinear)
+      expect PreConditionDefect:
+        discard image.resize(1, 1, rfNearest)
+
   test "colorspace is preserved (csRgb and csGray)":
     var rgb = newImage[uint8](2, 2, csRgb)
     for i in 0 ..< rgb.data.len: rgb.data[i] = uint8(i)
@@ -171,6 +249,7 @@ suite "process resize":
     # before newImage, so no large buffer is allocated.
     let img = gray([1'u8, 2, 3, 4], 2, 2)
     check raisesInvalidArg(proc() = discard img.resize(40000, 40000))
+    check raisesInvalidArg(proc() = discard img.resize(high(int), 1))
 
 suite "process crop":
   test "sub-rect is exact":

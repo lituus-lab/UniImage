@@ -26,3 +26,15 @@ suite "core Image":
   test "sizeBytes counts bytes not elements":
     var img = newImage[uint8](2, 2, csRgb)
     check img.sizeBytes() == 2 * 2 * 3 * sizeof(uint8)
+
+  test "validPackedImage rejects inconsistent and overflowing layouts":
+    var image = newImage[uint8](2, 2, csRgba)
+    check image.validPackedImage
+    image.channels = 3
+    check not image.validPackedImage
+    image.channels = 4
+    image.data.setLen(15)
+    check not image.validPackedImage
+    image.width = high(int)
+    image.height = 2
+    check not image.validPackedImage
