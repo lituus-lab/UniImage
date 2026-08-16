@@ -230,7 +230,9 @@ int    ui_image_pixels(ui_image h, unsigned char** out_ptr, size_t* out_len);
  * they may be identical and no pixel buffer is reallocated. */
 int    ui_image_composite_over(ui_image destination, ui_image source,
                                int x, int y, int opacity);
-/* Process ops produce a new handle (free with ui_image_free). */
+/* Process ops produce a new handle (free with ui_image_free). Bilinear and
+ * box resizing filter RGBA in premultiplied-alpha space, then publish the
+ * result as straight-alpha RGBA. Nearest-neighbour preserves exact bytes. */
 int    ui_image_resize(ui_image h, int w, int height, int filter,
                        ui_image* out_handle);
 int    ui_image_crop(ui_image h, int x, int y, int w, int height,
