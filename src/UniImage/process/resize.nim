@@ -9,8 +9,12 @@
 ##     (thumbnails). For upscaling the footprint is narrower than one source
 ##     pixel, so each output blends the one or two source pixels it overlaps
 ##     (a box kernel — distinct from bilinear's distance-weighted blend).
+## RGBA filtering is performed in premultiplied-alpha space and converted back
+## to the public straight-alpha representation. This prevents invisible RGB
+## values in transparent pixels from producing coloured fringes.
 ## Reimplemented from standard sampling theory (not vendored). Operates on
 ## `Image[uint8]`; the colorspace and channel count are preserved.
+import contracts
 import UniImage/core
 
 type
@@ -73,24 +77,41 @@ proc buildWeights(filter: ResizeFilter; M, N: int): seq[seq[Weight]] =
 const MaxResizePixels = 1'i64 shl 30
   ## Upper bound on the output pixel count and the float-intermediate pixel
   ## count. Beyond any real image, it keeps `w * h * channels` within `int64`
-  ## (so the allocation size cannot overflow/wrap) and refuses runaway
-  ## allocations early. Reached only through the C ABI, which takes `cint` dims.
+  ## and refuses runaway allocations early.
 
-proc resize*(img: Image[uint8]; w, h: int; filter = rfBilinear): Image[uint8] =
+proc productExceeds(a, b, c: int; limit: uint64): bool {.inline.} =
+  if a <= 0 or b <= 0 or c <= 0: return true
+  let
+    first = uint64(a)
+    second = uint64(b)
+    third = uint64(c)
+  first > limit div second or first * second > limit div third
+
+proc resizeImpl(img: Image[uint8]; w, h: int;
+                filter: ResizeFilter): Image[uint8] =
   ## Resize `img` to `w` x `h` using `filter`. Preserves the colorspace and
   ## channel count. Raises `UniImageException(uiInvalidArg)` for non-positive
   ## or oversized dimensions.
+  if not img.validPackedImage:
+    raise UniImageException(code: uiInvalidArg,
+        msg: "resize: malformed source image")
   if w <= 0 or h <= 0:
     raise UniImageException(code: uiInvalidArg,
         msg: "resize: non-positive dims")
   # The float intermediate holds `w * img.height` pixels; the result holds
   # `w * h`. Bound both against `MaxResizePixels` before any allocation.
-  if int64(w) * int64(img.height) > MaxResizePixels or
-      int64(w) * int64(h) > MaxResizePixels:
+  if productExceeds(w, img.height, 1, uint64(MaxResizePixels)) or
+      productExceeds(w, h, 1, uint64(MaxResizePixels)) or
+      productExceeds(w, img.height, img.channels, uint64(high(int))) or
+      productExceeds(w, h, img.channels, uint64(high(int))):
     raise UniImageException(code: uiInvalidArg,
         msg: "resize: dimensions too large")
-  result = newImage[uint8](w, h, img.colorspace)
   let ch = img.channels
+  if filter != rfNearest and productExceeds(w, img.height, ch,
+      uint64(high(int) div sizeof(float32))):
+    raise UniImageException(code: uiInvalidArg,
+        msg: "resize: float intermediate too large")
+  result = newImage[uint8](w, h, img.colorspace)
   if filter == rfNearest:
     for dy in 0 ..< h:
       let sy = min(img.height - 1,
@@ -110,18 +131,63 @@ proc resize*(img: Image[uint8]; w, h: int; filter = rfBilinear): Image[uint8] =
   let iw = w
   let ih = img.height
   var inter = newSeq[float32](iw * ih * ch)
-  for y in 0 ..< ih:
-    for dx in 0 ..< w:
-      let row = hw[dx]
-      for c in 0 ..< ch:
-        var acc = 0.0'f32
-        for wt in row: acc += wt.w * float32(img.data[(y * img.width + wt.i) *
-            ch + c])
-        inter[(y * iw + dx) * ch + c] = acc
-  for dy in 0 ..< h:
-    let row = vw[dy]
-    for dx in 0 ..< w:
-      for c in 0 ..< ch:
-        var acc = 0.0'f32
-        for wt in row: acc += wt.w * inter[(wt.i * iw + dx) * ch + c]
-        result.data[(dy * w + dx) * ch + c] = clampF32(acc)
+  if img.colorspace == csRgba:
+    for y in 0 ..< ih:
+      for dx in 0 ..< w:
+        let row = hw[dx]
+        var accumulated: array[4, float32]
+        for wt in row:
+          let
+            source = (y * img.width + wt.i) * 4
+            alpha = float32(img.data[source + 3])
+            premultiply = wt.w * alpha / 255'f32
+          for channel in 0 ..< 3:
+            accumulated[channel] += premultiply *
+              float32(img.data[source + channel])
+          accumulated[3] += wt.w * alpha
+        let destination = (y * iw + dx) * 4
+        for channel in 0 ..< 4:
+          inter[destination + channel] = accumulated[channel]
+    for dy in 0 ..< h:
+      let row = vw[dy]
+      for dx in 0 ..< w:
+        var accumulated: array[4, float32]
+        for wt in row:
+          let source = (wt.i * iw + dx) * 4
+          for channel in 0 ..< 4:
+            accumulated[channel] += wt.w * inter[source + channel]
+        let destination = (dy * w + dx) * 4
+        let alpha = clampF32(accumulated[3])
+        result.data[destination + 3] = alpha
+        if alpha > 0:
+          for channel in 0 ..< 3:
+            result.data[destination + channel] = if alpha == 255:
+              clampF32(accumulated[channel])
+            else:
+              clampF32(accumulated[channel] * 255'f32 / accumulated[3])
+  else:
+    for y in 0 ..< ih:
+      for dx in 0 ..< w:
+        let row = hw[dx]
+        for c in 0 ..< ch:
+          var acc = 0.0'f32
+          for wt in row:
+            acc += wt.w * float32(img.data[(y * img.width + wt.i) * ch + c])
+          inter[(y * iw + dx) * ch + c] = acc
+    for dy in 0 ..< h:
+      let row = vw[dy]
+      for dx in 0 ..< w:
+        for c in 0 ..< ch:
+          var acc = 0.0'f32
+          for wt in row:
+            acc += wt.w * inter[(wt.i * iw + dx) * ch + c]
+          result.data[(dy * w + dx) * ch + c] = clampF32(acc)
+
+proc resize*(img: Image[uint8]; w, h: int;
+             filter = rfBilinear): Image[uint8] {.contractual.} =
+  ## Resize a valid packed image with a release-safe runtime validation at the
+  ## public boundary.
+  require:
+    img.validPackedImage
+  body:
+    result = resizeImpl(img, w, h, filter)
