@@ -7,7 +7,8 @@ by the native [UniImage](https://github.com/lituus-lab/UniImage) engine written
 in Nim.
 
 `uniimage` decodes images into owned 8-bit pixel buffers, resizes, crops,
-rotates, applies EXIF orientation, encodes supported output formats, and
+rotates, applies EXIF orientation, composites straight-alpha layers, encodes
+supported output formats, and
 extracts perceptual palettes. Its metadata surface reads, edits, and strips
 EXIF data without first decoding the pixels.
 
@@ -53,7 +54,7 @@ native buffer.
 |---|---|
 | Decode and construct | `decode_buffer`, `image_from_pixels`, `thumbnail` |
 | Image inspection | `Image.width`, `height`, `channels`, `colorspace`, `pixels` |
-| Processing | `Image.resize`, `crop`, `rotate`, `orient` |
+| Processing | `Image.resize`, `crop`, `rotate`, `orient`, `composite_over` |
 | Encoding | `Image.encode` |
 | Palette extraction | `Image.extract_palette`, `Palette`, `Color` |
 | Metadata | `read_buffer`, `edit_buffer`, `strip_buffer` |
@@ -66,6 +67,9 @@ signature. Unsupported input and invalid operations raise `ValueError`.
 
 Palette extraction exposes `wu`, `kmeans`, `kmeansPP`, `medianCut`, `octree`,
 and `neuquant`. `Image.orient` accepts the eight EXIF Orientation values.
+`Image.composite_over` mutates an RGBA destination; its source may be Gray, RGB,
+or straight-alpha RGBA, placement clips, and opacity is an integer from 0 to
+255. `Image.pixels` remains a caller-owned `bytes` copy after the mutation.
 
 For an executable tour of both raster and metadata operations, see the
 [Python quickstart notebook](https://github.com/lituus-lab/UniImage/blob/main/py/notebooks/quickstart.ipynb).
