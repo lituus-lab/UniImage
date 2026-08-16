@@ -265,6 +265,52 @@ int main(void) {
   assert(ui_image_resize(img, 4, 4, UI_IMAGE_FILTER_BILINEAR, &big) ==
          UI_IMAGE_OK);
   assert(ui_image_width(big) == 4 && ui_image_height(big) == 4);
+  static const unsigned char alpha_edge[] = {
+    255, 0, 0, 0, 0, 0, 255, 255
+  };
+  static const unsigned char expected_alpha_resize[] = {
+    0, 0, 0, 0, 0, 0, 255, 128, 0, 0, 255, 255
+  };
+  ui_image alpha_source = NULL;
+  ui_image alpha_resized = NULL;
+  assert(ui_image_from_pixels(2, 1, UI_IMAGE_CS_RGBA, alpha_edge,
+                              sizeof alpha_edge, &alpha_source) == UI_IMAGE_OK);
+  assert(alpha_source != NULL);
+  assert(ui_image_resize(alpha_source, 3, 1, UI_IMAGE_FILTER_BILINEAR,
+                         &alpha_resized) == UI_IMAGE_OK);
+  assert(alpha_resized != NULL);
+  unsigned char* alpha_pixels = NULL;
+  size_t alpha_pixels_len = 0;
+  assert(ui_image_pixels(alpha_resized, &alpha_pixels, &alpha_pixels_len) ==
+         UI_IMAGE_OK);
+  assert(alpha_pixels_len == sizeof expected_alpha_resize);
+  assert(memcmp(alpha_pixels, expected_alpha_resize,
+                sizeof expected_alpha_resize) == 0);
+  unsigned char* alpha_source_pixels = NULL;
+  size_t alpha_source_len = 0;
+  assert(ui_image_pixels(alpha_source, &alpha_source_pixels,
+                         &alpha_source_len) == UI_IMAGE_OK);
+  assert(alpha_source_len == sizeof alpha_edge);
+  assert(memcmp(alpha_source_pixels, alpha_edge, sizeof alpha_edge) == 0);
+  assert(alpha_resized != alpha_source);
+  ui_image alpha_box = NULL;
+  assert(ui_image_resize(alpha_source, 1, 1, UI_IMAGE_FILTER_BOX,
+                         &alpha_box) == UI_IMAGE_OK);
+  assert(alpha_box != NULL && alpha_box != alpha_source);
+  assert(ui_image_pixels(alpha_box, &alpha_pixels, &alpha_pixels_len) ==
+         UI_IMAGE_OK);
+  assert(alpha_pixels_len == 4 && alpha_pixels[0] == 0 &&
+         alpha_pixels[1] == 0 && alpha_pixels[2] == 255 &&
+         alpha_pixels[3] == 128);
+  ui_image alpha_nearest = NULL;
+  assert(ui_image_resize(alpha_source, 2, 1, UI_IMAGE_FILTER_NEAREST,
+                         &alpha_nearest) == UI_IMAGE_OK);
+  assert(alpha_nearest != NULL && alpha_nearest != alpha_source);
+  assert(ui_image_pixels(alpha_nearest, &alpha_pixels, &alpha_pixels_len) ==
+         UI_IMAGE_OK);
+  assert(alpha_pixels_len == sizeof alpha_edge);
+  assert(memcmp(alpha_pixels, alpha_edge, sizeof alpha_edge) == 0);
+  assert(memcmp(alpha_source_pixels, alpha_edge, sizeof alpha_edge) == 0);
   ui_image cell = NULL;
   assert(ui_image_crop(big, 1, 1, 2, 2, &cell) == UI_IMAGE_OK);
   assert(ui_image_width(cell) == 2 && ui_image_height(cell) == 2);
@@ -312,6 +358,10 @@ int main(void) {
   ui_image_free(img);
   ui_image_free(img);  /* stale handles and double-free are benign */
   ui_image_free(big);
+  ui_image_free(alpha_source);
+  ui_image_free(alpha_resized);
+  ui_image_free(alpha_box);
+  ui_image_free(alpha_nearest);
   ui_image_free(cell);
   ui_image_free(rot);
   ui_image_free(back);

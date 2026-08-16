@@ -686,6 +686,8 @@ proc ui_image_resize(h: pointer; w, height: cint; filter: cint;
     GC_ref(nh)
     outHandle[] = p
     UI_IMAGE_OK
+  except OutOfMemDefect:
+    UI_IMAGE_ERR_MEM
   except UniImageException as e:
     mapImgStatus(e.code)
   except CatchableError, Defect:
