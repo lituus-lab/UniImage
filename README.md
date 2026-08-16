@@ -14,8 +14,9 @@ tool.
   lossless WebP, and baseline TIFF decoding; PNG, JPEG, BMP, QOI, PNM/PAM,
   and TGA encoding.
 - `UniImage/compress`: pure-Nim Deflate and zlib streams.
-- `UniImage/process`: resize, crop, rotation, flips, EXIF orientation, and
-  palette extraction through UniColor's Wu, k-means, k-means++, median-cut,
+- `UniImage/process`: resize, crop, rotation, flips, EXIF orientation,
+  deterministic straight-alpha compositing, and palette extraction through
+  UniColor's Wu, k-means, k-means++, median-cut,
   octree, and NeuQuant implementations.
 - `UniImage/exif`: EXIF, XMP, IPTC-IIM, MakerNote, thumbnail, and ISOBMFF
   metadata parsing and editing.
@@ -184,9 +185,30 @@ records the included provenance.
 
 ## Benchmarks
 
-UniImage does not currently ship a benchmark harness. Codec work is validated
-for correctness and bounded resource use; this repository makes no performance
-claim without a reproducible measurement.
+`nimble benchmarkComposite` builds and runs one release compositing benchmark.
+`nimble benchmarkCompositeBaseline` builds it, performs three independent
+20-iteration runs, computes the median run means, and writes the complete
+aggregate to `build/composite-baseline.json`. For explicit protocol parameters:
+
+```bash
+nim c -d:release --path:src -o:build/benchmark_composite \
+  benchmarks/benchmark_composite.nim
+nim c -d:release -o:build/run_composite_baseline \
+  benchmarks/run_composite_baseline.nim
+./build/run_composite_baseline \
+  build/benchmark_composite build/composite-baseline.json 3 20
+```
+
+The harness separates full-canvas opaque RGB, translucent RGBA, and
+half-clipped RGBA source-over at 1920×1080. These phases perform no allocation;
+the intentionally allocating alias-snapshot path is not measured by them.
+Three 20-iteration runs on an Apple M4 with Nim 2.2.10
+recorded median run means of 9.5452 ms (217.24 MPix/s) for opaque RGB,
+13.1824 ms (157.30 MPix/s) for translucent RGBA, and 7.7593 ms
+(133.62 MPix/s over the visible half) for clipped RGBA. These are local
+regression evidence, not cross-machine claims. Exact repeated means and the
+environment are stored in
+`benchmarks/results/apple-m4-composite-2026-08-16.json`.
 
 ## AI-assisted contributions
 

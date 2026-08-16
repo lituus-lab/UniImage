@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 lituus-lab
+import std/base64
 import nimib
 
 nbInit
@@ -70,6 +71,42 @@ nbCode:
   doAssert portrait.data == @[4'u8, 1, 5, 2, 6, 3]
 
 nbText: """
+## Straight-alpha compositing
+
+`compositeOver` places Gray, RGB, or straight-alpha RGBA pixels over an RGBA
+destination. Coordinates are integer pixels and clip at every edge. Opacity is
+an exact 0–255 multiplier. Channel divisions use round-to-nearest with halves
+rounded upward, so the same bytes are produced by Nim, C, and Python. Aliased
+source and destination buffers are snapshotted before writes.
+"""
+
+nbCode:
+  var canvas = newImage[uint8](240, 120, csRgba)
+  for pixel in 0 ..< canvas.width * canvas.height:
+    canvas.data[pixel * 4] = 32
+    canvas.data[pixel * 4 + 1] = 48
+    canvas.data[pixel * 4 + 2] = 80
+    canvas.data[pixel * 4 + 3] = 255
+  var overlay = newImage[uint8](120, 80, csRgba)
+  for row in 0 ..< overlay.height:
+    for column in 0 ..< overlay.width:
+      let offset = (row * overlay.width + column) * 4
+      overlay.data[offset] = 240
+      overlay.data[offset + 1] = uint8(40 + column)
+      overlay.data[offset + 2] = 72
+      overlay.data[offset + 3] = uint8(64 + row * 2)
+  canvas.compositeOver(overlay, 60, 20, 224)
+  doAssert canvas.data.len == 240 * 120 * 4
+
+nbRawHtml: """
+<figure><img alt="UniImage straight-alpha compositing demonstration"
+style="max-width:100%;image-rendering:pixelated" src="data:image/png;base64,""" &
+  base64.encode(canvas.encodeImage(efPng)) & """">
+<figcaption>Executable RGBA source-over output embedded directly in this HTML.</figcaption>
+</figure>
+"""
+
+nbText: """
 ## Perceptual palette extraction
 
 UniImage converts packed 8-bit pixels to UniColor's typed sRGB representation.
@@ -96,6 +133,14 @@ Palette extraction uses an immutable `ui_palette` handle whose tagged colors
 retain UniColor's working-space identity. The same handle is wrapped by the
 Python `Palette` class.
 
+Raster compositing is additive ABI-v1 surface. It mutates only the owned
+destination handle and accepts the same 0–255 opacity as the Nim API:
+
+```c
+int ui_image_composite_over(ui_image destination, ui_image source,
+                            int x, int y, int opacity);
+```
+
 ```c
 void        ui_exif_init(void);
 int         ui_exif_read_buffer(const unsigned char* data, size_t length,
@@ -105,7 +150,8 @@ const char* ui_exif_to_json(ui_exif_meta h);
 
 The C ABI **never raises**. Every entry point validates its arguments and
 traps both `CatchableError` and `Defect`, mapping them to a `ui_exif_status`
-code. Built `--app:staticlib`/`--app:lib --noMain --mm:arc -d:release` —
+or `ui_image_status` code. Built
+`--app:staticlib`/`--app:lib --noMain --mm:arc -d:release` —
 `-d:release` (not `-d:danger`) keeps Nim's bounds checks as a backstop while
 parsing untrusted image bytes.
 
@@ -120,6 +166,14 @@ import uniimage
 
 m = uniimage.read_buffer(bytes([0xFF, 0xD8, 0xFF, 0xD9]))
 m.is_valid          # False
+
+destination = uniimage.image_from_pixels(
+    24, 16, bytes(24 * 16 * 4), uniimage.CS_RGBA
+)
+source = uniimage.image_from_pixels(
+    4, 4, bytes(4 * 4 * 4), uniimage.CS_RGBA
+)
+destination.composite_over(source, x=12, y=8, opacity=192)
 ```
 
 ## References
