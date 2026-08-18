@@ -126,16 +126,21 @@ photograph it wrote declares `ispe` 64x64 and a `clap` that narrows it; reading
 
 The pixels are a separate question. HEVC and AV1 are what a HEIF file holds,
 and writing a decoder for either would mean an enormous amount of code or, for
-HEVC, a patent licence every consumer would inherit. `-d:appleCodecs` on macOS
-calls the decoder the system already licenses instead:
+HEVC, a patent licence every consumer would inherit. On macOS the system's own
+decoder is called instead, so the obligation stays with Apple's implementation.
+
+**On by default on macOS**, where the frameworks are part of the operating
+system: a Mac build that cannot open a HEIC is the wrong default for a library
+whose consumers catalogue photographs. `-d:noAppleCodecs` turns it off for a
+build that must link nothing.
 
 ```bash
-nimble testApple    # builds with -d:appleCodecs and exercises it
+nimble testApple    # the suite that exercises the system decoder
 ```
 
-It is off by default, so the ordinary build links no framework and runs
-anywhere. `formats/heif` answers what a picture *is* — size, orientation,
-coding — everywhere, without it.
+Elsewhere nothing changes: `formats/heif` answers what a picture *is* — size,
+orientation, coding — everywhere, and asking for pixels raises rather than
+guessing.
 
 ## Codec boundaries
 

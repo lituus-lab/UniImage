@@ -9,10 +9,14 @@
 ## system already licenses avoids both — the picture comes back as pixels, and
 ## whatever obligation the codec carries stays with Apple's own implementation.
 ##
-## **Opt-in, and macOS only.** Nothing here compiles unless `-d:appleCodecs` is
-## given, so the default build links no framework and stays portable. A caller
-## that wants system decoding asks for it and accepts what that means for where
-## its binary runs.
+## **macOS only, and on by default there.** `config.nims` defines
+## `appleCodecs` for a Mac build, because the frameworks are part of the
+## operating system and a Mac that cannot open a HEIC is the wrong default for
+## a library whose consumers catalogue photographs. `-d:noAppleCodecs` turns it
+## off for a build that must link nothing.
+##
+## Everywhere else nothing here compiles at all, and the library stays
+## portable.
 ##
 ## `formats/heif` still answers what a picture *is* — size, orientation, coding
 ## — everywhere, without this. Only the pixels need the system.
