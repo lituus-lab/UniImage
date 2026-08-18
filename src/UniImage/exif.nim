@@ -6,6 +6,9 @@
 ## Metadata-only: no pixel decode happens here. Supports JPEG, TIFF/RAW
 ## (NEF/CR2/DNG/ARW), PNG, WebP, and ISOBMFF (MP4/MOV/HEIC/AVIF).
 import ./exif/[endian, tiff, jpeg, isobmff, tags, enums, png, webp, makernotes]
+# The ISOBMFF box layer is the container primitive UniMovie builds tracks on;
+# exporting it is what keeps one box reader in the family instead of two.
+export isobmff
 import ./exif/edit
 export edit
 import ./exif/xmp
