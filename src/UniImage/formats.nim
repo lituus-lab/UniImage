@@ -15,6 +15,11 @@ import ./formats/gif
 # or AV1 and belong to a backend the application registers.
 import ./formats/heif
 export heif
+# The system decoder, when the build asked for it. Off by default, so the
+# library links no framework and runs anywhere unless a caller opts in.
+when defined(macosx) and defined(appleCodecs):
+  import ./formats/heif_apple
+  export heif_apple
 import ./formats/jpeg
 import ./formats/webp
 import ./formats/tiff
@@ -54,6 +59,10 @@ proc decodeImage*(data: openArray[byte]): Image[uint8] =
     return decodePng(data)
   if data.len >= 2 and data[0] == 0xFF and data[1] == 0xD8: # JPEG SOI
     return decodeJpeg(data)
+  when defined(macosx) and defined(appleCodecs):
+    # HEIF shares its magic with MP4, so the brand is what tells them apart.
+    if isHeif(data):
+      return decodeHeifApple(data)
   if data.len >= 6 and data[0] == byte('G') and data[1] == byte('I') and
       data[2] == byte('F') and data[3] == byte('8') and
       (data[4] == byte('7') or data[4] == byte('9')) and data[5] == byte('a'):

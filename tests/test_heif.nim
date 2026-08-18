@@ -92,3 +92,63 @@ suite "recognition":
       except ValueError, IOError:
         discard
       step += 37
+
+when defined(macosx) and defined(appleCodecs):
+  suite "the system decoder, when the build asked for it":
+    test "every fixture decodes to the size the container declared":
+      # Which is the check that matters for the clean-aperture case: ImageIO
+      # applies the crop, so agreement proves this reader applied it too.
+      for name in ["apple.heic", "libheif.heic", "portrait.heic"]:
+        let raw = readFile(Fixtures / name)
+        var bytes = newSeq[byte](raw.len)
+        for index in 0 ..< raw.len: bytes[index] = byte(raw[index])
+        let container = readHeif(bytes)
+        let pixels = decodeHeifApple(bytes)
+        check (pixels.width, pixels.height) == (container.width,
+            container.height)
+        check pixels.channels == 4
+        check pixels.data.len == pixels.width * pixels.height * 4
+
+    test "the pixels are the ones sips gets from the same file":
+      # sips converts the HEIC to PNG with the same system decoder; decoding
+      # that PNG here and comparing is an end-to-end check of this path.
+      if findExe("sips").len == 0:
+        skip()
+      else:
+        let png = getTempDir() / "unimage-heif-oracle.png"
+        defer: removeFile(png)
+        let source = Fixtures / "apple.heic"
+        check execCmdEx("sips -s format png " & source.quoteShell & " --out " &
+          png.quoteShell).exitCode == 0
+        let raw = readFile(source)
+        var bytes = newSeq[byte](raw.len)
+        for index in 0 ..< raw.len: bytes[index] = byte(raw[index])
+        let mine = decodeHeifApple(bytes)
+        let pngRaw = readFile(png)
+        var pngBytes = newSeq[byte](pngRaw.len)
+        for index in 0 ..< pngRaw.len: pngBytes[index] = byte(pngRaw[index])
+        let theirs = decodeImage(pngBytes)
+        check (mine.width, mine.height) == (theirs.width, theirs.height)
+        var worst = 0
+        for y in 0 ..< mine.height:
+          for x in 0 ..< mine.width:
+            for channel in 0 ..< 3:
+              let a = int(mine.data[(y * mine.width + x) * mine.channels + channel])
+              let b = int(theirs.data[(y * theirs.width + x) * theirs.channels + channel])
+              worst = max(worst, abs(a - b))
+        # One level: the two paths round their colour conversion differently.
+        check worst <= 2
+
+    test "decodeImage routes a HEIC to the system decoder":
+      let raw = readFile(Fixtures / "apple.heic")
+      var bytes = newSeq[byte](raw.len)
+      for index in 0 ..< raw.len: bytes[index] = byte(raw[index])
+      let image = decodeImage(bytes)
+      check (image.width, image.height) == (64, 48)
+
+    test "bytes that are not HEIF are refused before the system sees them":
+      var notHeif: seq[byte]
+      for character in "still not a picture":
+        notHeif.add byte(character)
+      expect UniImageException:
+        discard decodeHeifApple(notHeif)

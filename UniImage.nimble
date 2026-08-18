@@ -203,3 +203,9 @@ task coverage, "LCOV + HTML coverage report for the Nim sources (needs lcov)":
   exec "genhtml lcov.info --output-directory coverage --legend --quiet" &
        " --ignore-errors range,range"
   exec "lcov --summary lcov.info"
+
+# Opt-in, macOS only: builds the system HEIC/AVIF decoder and runs the suite
+# that exercises it. Not in the default gate, because the default build links
+# no framework and must keep running anywhere.
+task testApple, "Nim tests with the macOS system codecs (-d:appleCodecs)":
+  exec "nim c -r -d:appleCodecs --path:src -o:build/test_heif_apple tests/test_heif.nim"
