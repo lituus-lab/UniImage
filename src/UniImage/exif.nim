@@ -26,11 +26,14 @@ type
     software*: string
     isValid*: bool         # Strictly means embedded metadata was found
     orientation*: int      # Raw EXIF Orientation value (1-8), -1 if absent
-    gpsLatitude*: float    # Decimal degrees, 0.0 if absent (check gpsLatitudeRef for sign)
-    gpsLongitude*: float   # Decimal degrees, 0.0 if absent (check gpsLongitudeRef for sign)
-    gpsLatitudeRef*: char  # 'N' or 'S'
-    gpsLongitudeRef*: char # 'E' or 'W'
-    gpsAltitude*: float    # metres; negative below sea level
+    gpsLatitude*: float
+      # Decimal degrees, already signed: south is negative. 0.0 if absent.
+      # EXIF keeps the magnitude and the hemisphere apart; these two are the
+      # two put together, so applying the reference again flips the sign.
+    gpsLongitude*: float # Decimal degrees, already signed: west is negative.
+    gpsLatitudeRef*: char # 'N' or 'S', as the file stored it.
+    gpsLongitudeRef*: char # 'E' or 'W', as the file stored it.
+    gpsAltitude*: float # metres; negative below sea level
     allTags*: Table[string, string]
 
 proc parseDateTime*(s: string): DateTime =
