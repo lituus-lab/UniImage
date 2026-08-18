@@ -124,8 +124,18 @@ size its encoder likes and crops it back with a clean aperture, so a 64x48
 photograph it wrote declares `ispe` 64x64 and a `clap` that narrows it; reading
 `ispe` alone reports the padding.
 
-Nothing here decodes it. The coded bytes are HEVC or AV1 and belong to a backend
-the application registers.
+The pixels are a separate question. HEVC and AV1 are what a HEIF file holds,
+and writing a decoder for either would mean an enormous amount of code or, for
+HEVC, a patent licence every consumer would inherit. `-d:appleCodecs` on macOS
+calls the decoder the system already licenses instead:
+
+```bash
+nimble testApple    # builds with -d:appleCodecs and exercises it
+```
+
+It is off by default, so the ordinary build links no framework and runs
+anywhere. `formats/heif` answers what a picture *is* — size, orientation,
+coding — everywhere, without it.
 
 ## Codec boundaries
 
