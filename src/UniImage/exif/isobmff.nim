@@ -60,6 +60,28 @@ iterator boxes*(data: openArray[byte]; start, limit: int): tuple[kind: string;
     yield (box.kind, offset + header, offset + int(size))
     offset += int(size)
 
+func putBE*(target: var string; value: int64; width: int) =
+  ## Append `value` as `width` big-endian bytes. Bits above `width` are dropped,
+  ## so a matrix entry can be written as four bytes and a volume as two without
+  ## either being masked at the call site.
+  ##
+  ## The building half of this module: the same box structure these procs read
+  ## is what `box` and `fullBox` assemble, so a file written here reads back
+  ## through `boxes` above.
+  for index in countdown(width - 1, 0):
+    target.add char(uint8((value shr (index * 8)) and 0xFF))
+
+func box*(kind: string; payload: string): string =
+  ## A box: its own length, its four-character kind, then its payload.
+  result.putBE(int64(payload.len + 8), 4)
+  result.add kind
+  result.add payload
+
+func fullBox*(kind: string; payload: string): string =
+  ## A full box — one whose payload begins with a version byte and three flag
+  ## bytes. Both are zero for everything ISOBMFF needs written here.
+  box(kind, "\0\0\0\0" & payload)
+
 proc findBox*(data: openArray[byte]; start, limit: int;
               path: openArray[string]; depth = 0): tuple[body, bodyEnd: int] =
   ## Walk a path of box kinds, e.g. `["moov", "trak", "mdia"]`, and return the
