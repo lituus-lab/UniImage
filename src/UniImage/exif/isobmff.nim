@@ -1,19 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ./endian
+import ../isobmff
+export isobmff
 import std/[strutils, tables]
 
-const MaxBoxDepth = 32
-  ## Hard cap on ISOBMFF box nesting. Hostile files can chain thousands of
-  ## `moov`/`meta` boxes; without a bound the recursive walk overflows the stack
-  ## (a SIGSEGV that `try/except CatchableError` does NOT catch). 32 is far
-  ## beyond any real file (a few levels: ftyp/moov/trak/mdia/minf/...).
 
 type
-  Box* = object
-    offset*: int
-    size*: int64
-    kind*: string
 
   VideoMeta* = object
     creationTime*: string
@@ -22,82 +15,6 @@ type
     make*: string
     model*: string
     software*: string
-
-proc readBoxHeader*(data: openArray[byte], offset: int): Box =
-  if offset < 0 or offset > data.len - 8: return
-  let size32 = readUint32(data, offset, BigEndian)
-  result.offset = offset
-  result.size = int64(size32)
-  result.kind = ""
-  for i in 0..3: result.kind.add char(data[offset + 4 + i])
-
-  if size32 == 1:
-    if offset + 16 <= data.len:
-      let hi = readUint32(data, offset + 8, BigEndian)
-      let lo = readUint32(data, offset + 12, BigEndian)
-      result.size = (int64(hi) shl 32) or int64(lo)
-
-iterator boxes*(data: openArray[byte]; start, limit: int): tuple[kind: string;
-    body, bodyEnd: int] =
-  ## Each box between `start` and `limit`, as its kind and the span of its
-  ## payload.
-  ##
-  ## A size of 0 means "to the end of the enclosing box"; 1 means a 64-bit size
-  ## follows the kind, which moves the payload eight bytes further along. A box
-  ## claiming to be smaller than its own header, or to run past its parent, ends
-  ## the walk rather than raising: trailing garbage after a valid box should not
-  ## cost a caller what it already parsed.
-  ##
-  ## The bound is the caller's, not the buffer's, so a nested walk cannot escape
-  ## its parent — which is what makes recursion over this safe.
-  var offset = start
-  while offset >= 0 and offset + 8 <= limit and offset + 8 <= data.len:
-    let box = readBoxHeader(data, offset)
-    var size = box.size
-    var header = if readUint32(data, offset, BigEndian) == 1: 16 else: 8
-    if size == 0: size = int64(limit - offset)
-    if size < int64(header) or offset + int(size) > limit: break
-    yield (box.kind, offset + header, offset + int(size))
-    offset += int(size)
-
-func putBE*(target: var string; value: int64; width: int) =
-  ## Append `value` as `width` big-endian bytes. Bits above `width` are dropped,
-  ## so a matrix entry can be written as four bytes and a volume as two without
-  ## either being masked at the call site.
-  ##
-  ## The building half of this module: the same box structure these procs read
-  ## is what `box` and `fullBox` assemble, so a file written here reads back
-  ## through `boxes` above.
-  for index in countdown(width - 1, 0):
-    target.add char(uint8((value shr (index * 8)) and 0xFF))
-
-func box*(kind: string; payload: string): string =
-  ## A box: its own length, its four-character kind, then its payload.
-  result.putBE(int64(payload.len + 8), 4)
-  result.add kind
-  result.add payload
-
-func fullBox*(kind: string; payload: string): string =
-  ## A full box — one whose payload begins with a version byte and three flag
-  ## bytes. Both are zero for everything ISOBMFF needs written here.
-  box(kind, "\0\0\0\0" & payload)
-
-proc findBox*(data: openArray[byte]; start, limit: int;
-              path: openArray[string]; depth = 0): tuple[body, bodyEnd: int] =
-  ## Walk a path of box kinds, e.g. `["moov", "trak", "mdia"]`, and return the
-  ## span of the last one's payload. `(-1, -1)` when any step is missing, so a
-  ## caller tests one value rather than catching an exception for a box that is
-  ## legitimately optional.
-  ##
-  ## `MaxBoxDepth` bounds the recursion: a file whose sizes describe a cycle
-  ## stops here rather than running the stack out.
-  if depth > MaxBoxDepth or path.len == 0: return (-1, -1)
-  for kind, body, bodyEnd in boxes(data, start, limit):
-    if kind != path[0]: continue
-    if path.len == 1: return (body, bodyEnd)
-    let inner = findBox(data, body, bodyEnd, path[1 .. ^1], depth + 1)
-    if inner.body >= 0: return inner
-  (-1, -1)
 
 proc boxSizeAt(data: openArray[byte]; i, endAt: int): int =
   ## Box size at `i` via the shared `readBoxHeader` parser, with the to-end
@@ -145,7 +62,7 @@ proc parseIsobmff*(data: openArray[byte]): VideoMeta =
               return
       i += int(sub.size)
 
-  proc recurse(boxData: openArray[byte], depth: int = 0) =
+  proc recurse(boxData: openArray[byte]; depth: int = 0) =
     if depth > MaxBoxDepth: return # bound nesting (hostile-input DoS)
     var i = 0
     while i + 8 <= boxData.len:
@@ -293,10 +210,6 @@ proc findCreationTime*(data: openArray[byte]): string =
   return res.creationTime
 
 # --- strip (HEIC/AVIF) -----------------------------------------------------
-
-proc isIsobmff*(data: openArray[byte]): bool =
-  data.len >= 12 and data[4] == byte('f') and data[5] == byte('t') and
-    data[6] == byte('y') and data[7] == byte('p')
 
 proc box4(data: openArray[byte]; i: int): string =
   if i < 0 or i + 8 > data.len: return ""

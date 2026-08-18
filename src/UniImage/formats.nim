@@ -11,6 +11,10 @@ import ./formats/pcx
 import ./formats/hdr
 import ./formats/png
 import ./formats/gif
+# HEIF says what a picture is without decoding one; the coded bytes are HEVC
+# or AV1 and belong to a backend the application registers.
+import ./formats/heif
+export heif
 import ./formats/jpeg
 import ./formats/webp
 import ./formats/tiff
