@@ -13,6 +13,11 @@ tool.
 - `UniImage/formats`: PNG, JPEG, BMP, QOI, PNM/PAM, TGA, PCX, HDR, GIF,
   lossless WebP, and baseline TIFF decoding; PNG, JPEG, BMP, QOI, PNM/PAM,
   and TGA encoding.
+- `UniImage/isobmff`: the ISO base media box layer — walking a tree of boxes
+  and building one. MP4, MOV, HEIF and AVIF share it, and so does UniMovie.
+- `UniImage/formats/heif`: what a HEIF, HEIC or AVIF container says about its
+  picture — size, display rotation, mirroring, coding and where the coded bytes
+  are — without decoding one.
 - `UniImage/compress`: pure-Nim Deflate and zlib streams.
 - `UniImage/process`: resize, crop, rotation, flips, EXIF orientation,
   deterministic straight-alpha compositing, and palette extraction through
@@ -105,6 +110,22 @@ uniimg rotate input.png output.png 90
 
 `xmp`, `thumb`, and `set` cover XMP inspection, embedded-thumbnail extraction,
 and EXIF/IPTC editing. Run `uniimg` without arguments for the complete usage.
+
+## HEIF says what a picture is, not what it looks like
+
+A HEIF file has no image in the ordinary sense: it has *items*, and the size of
+the picture is found by following `pitm` to the primary item, `ipma` to the
+properties it uses and `ipco` to those properties. Reading the first `ispe` in
+the file instead gives whatever the first item happens to be — a thumbnail, in a
+photograph from a phone.
+
+The size that comes back is the one to display. libheif pads a picture out to a
+size its encoder likes and crops it back with a clean aperture, so a 64x48
+photograph it wrote declares `ispe` 64x64 and a `clap` that narrows it; reading
+`ispe` alone reports the padding.
+
+Nothing here decodes it. The coded bytes are HEVC or AV1 and belong to a backend
+the application registers.
 
 ## Codec boundaries
 
