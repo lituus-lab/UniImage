@@ -37,6 +37,46 @@ proc readBoxHeader*(data: openArray[byte], offset: int): Box =
       let lo = readUint32(data, offset + 12, BigEndian)
       result.size = (int64(hi) shl 32) or int64(lo)
 
+iterator boxes*(data: openArray[byte]; start, limit: int): tuple[kind: string;
+    body, bodyEnd: int] =
+  ## Each box between `start` and `limit`, as its kind and the span of its
+  ## payload.
+  ##
+  ## A size of 0 means "to the end of the enclosing box"; 1 means a 64-bit size
+  ## follows the kind, which moves the payload eight bytes further along. A box
+  ## claiming to be smaller than its own header, or to run past its parent, ends
+  ## the walk rather than raising: trailing garbage after a valid box should not
+  ## cost a caller what it already parsed.
+  ##
+  ## The bound is the caller's, not the buffer's, so a nested walk cannot escape
+  ## its parent — which is what makes recursion over this safe.
+  var offset = start
+  while offset >= 0 and offset + 8 <= limit and offset + 8 <= data.len:
+    let box = readBoxHeader(data, offset)
+    var size = box.size
+    var header = if readUint32(data, offset, BigEndian) == 1: 16 else: 8
+    if size == 0: size = int64(limit - offset)
+    if size < int64(header) or offset + int(size) > limit: break
+    yield (box.kind, offset + header, offset + int(size))
+    offset += int(size)
+
+proc findBox*(data: openArray[byte]; start, limit: int;
+              path: openArray[string]; depth = 0): tuple[body, bodyEnd: int] =
+  ## Walk a path of box kinds, e.g. `["moov", "trak", "mdia"]`, and return the
+  ## span of the last one's payload. `(-1, -1)` when any step is missing, so a
+  ## caller tests one value rather than catching an exception for a box that is
+  ## legitimately optional.
+  ##
+  ## `MaxBoxDepth` bounds the recursion: a file whose sizes describe a cycle
+  ## stops here rather than running the stack out.
+  if depth > MaxBoxDepth or path.len == 0: return (-1, -1)
+  for kind, body, bodyEnd in boxes(data, start, limit):
+    if kind != path[0]: continue
+    if path.len == 1: return (body, bodyEnd)
+    let inner = findBox(data, body, bodyEnd, path[1 .. ^1], depth + 1)
+    if inner.body >= 0: return inner
+  (-1, -1)
+
 proc boxSizeAt(data: openArray[byte]; i, endAt: int): int =
   ## Box size at `i` via the shared `readBoxHeader` parser, with the to-end
   ## sentinel (size32 == 0) clamped to `endAt`. -1 when the header is
