@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 lituus-lab
 import std/[unittest, strutils]
+when not defined(release):
+  import contracts
 import UniImage/compress
 
 template expectCode(expected: UniImageError; body: untyped) =
@@ -58,6 +60,12 @@ suite "deflate inflate":
     # BFINAL=1, BTYPE=0 -> 0x01; LEN=2, NLEN=0xFFFD; literal "Hi".
     let b = @[byte 0x01, 0x02, 0x00, 0xFD, 0xFF, 0x48, 0x69]
     expectCode(uiInvalidArg): discard inflate(b, maxOutput = 1)
+
+when not defined(release):
+  suite "deflate contracts":
+    test "start must designate an input boundary":
+      expect PreConditionDefect:
+        discard inflateWithConsumed([byte 0x03, 0x00], start = 3)
 
 suite "zlib inflate":
   test "zlib-wrapped stored block round-trips with Adler-32":

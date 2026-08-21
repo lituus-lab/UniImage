@@ -11,3 +11,5 @@
 ## without any decoder, and asking for pixels raises rather than guessing.
 when defined(macosx) and not defined(noAppleCodecs):
   switch("define", "appleCodecs")
+switch("path", "../UniChecksum/src")
+switch("path", "../UniCompress/src")
