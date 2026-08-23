@@ -44,7 +44,7 @@ tool.
 
 ## Layout
 
-```
+```text
 src/UniImage.nim          umbrella module
 src/UniImage/core.nim     image model: error codes, color spaces, Image[P]
 src/UniImage/exif.nim     EXIF/XMP/IPTC metadata facade
