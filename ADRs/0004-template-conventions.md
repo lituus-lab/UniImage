@@ -8,7 +8,7 @@
 
 ## Layout
 
-```
+```text
 UniImage.nimble          package + tasks
 config.nims                 arch-conditional build flags
 src/UniImage.nim         umbrella

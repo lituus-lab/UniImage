@@ -20,7 +20,7 @@ Commits without a `Signed-off-by` trailer are not accepted.
 
 Commit subjects and the PR title follow [Conventional Commits 1.0](https://www.conventionalcommits.org/):
 
-```
+```text
 <type>(scope)!: <description>
 ```
 
@@ -28,7 +28,7 @@ Commit subjects and the PR title follow [Conventional Commits 1.0](https://www.c
 `build`, `ci`, `chore`, `revert`, `bump`. `scope` and `!` (breaking change) are
 optional. A space separates the colon from the description.
 
-```
+```text
 feat: add EXIF strip CLI
 fix(c_api): clamp negative index instead of raising
 docs: clarify codec support
@@ -67,4 +67,5 @@ pre-commit run --all-files
 ## Conventions
 
 See `ADRs/0004` and `AGENTS.md`. English comments, terse, describe what is done.
-NimContracts compiled away under `-d:release`; the C ABI validates handles, traps boundary `CatchableError`/`Defect`, and maps them to `UI_EXIF_*` codes.
+NimContracts compiled away under `-d:release`; the C ABI validates handles,
+traps boundary `CatchableError`/`Defect`, and maps them to `UI_EXIF_*` codes.
