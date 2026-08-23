@@ -90,6 +90,8 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install make --no-progress -y
       - run: nimble ctest
+      # The C demo is part of the documented surface; nothing else builds it.
+      - run: nimble cexample
       - run: nimble clib
       - name: Upload Library
         uses: actions/upload-artifact@v7
