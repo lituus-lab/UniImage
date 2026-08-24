@@ -13,6 +13,16 @@ ROOT   := $(CURDIR)/../..
 CFLAGS := -I$(ROOT)/include -O2 -Wall -Wextra -std=c11
 LIB    := $(ROOT)/libUniImage.a
 
+# The static library carries the macOS system HEIF decoder unless the build
+# asked otherwise, and that decoder calls into the system frameworks. A
+# consumer on a Mac links them; so must this.
+UNAME := $(shell uname -s 2>/dev/null)
+ifeq ($(UNAME),Darwin)
+  LDLIBS := -framework CoreFoundation -framework CoreGraphics -framework ImageIO
+else
+  LDLIBS :=
+endif
+
 ifeq ($(OS),Windows_NT)
   BIN  := test_uniimage.exe
   RUN  := $(BIN)
@@ -28,7 +38,7 @@ all: run
 run: $(BIN)
 	$(RUN)
 $(BIN): test_uniimage.c $(ROOT)/include/UniImage.h $(LIB)
-	$(CC) $(CFLAGS) -o $(BIN) test_uniimage.c $(LIB)
+	$(CC) $(CFLAGS) -o $(BIN) test_uniimage.c $(LIB) $(LDLIBS)
 # File target, not phony: `nimble ctest` already built the lib, don't redo it.
 $(LIB):
 	cd $(ROOT) && nimble clibStatic
