@@ -12,6 +12,10 @@ requires "nim >= 2.0.0"
 requires "https://github.com/lbartoletti/NimContracts#main"
 requires "https://github.com/lituus-lab/UniColor#main"
 requires "https://github.com/lituus-lab/UniChecksum#main"
+# Container framing: the box layer HEIF and the Exif item inside an MP4 are
+# read through, shared with the video and audio libraries that read the same
+# structure.
+requires "https://github.com/lituus-lab/UniContainer#main"
 requires "https://github.com/lituus-lab/UniCompress#main"
 
 task lint, "Fail if nimpretty would reformat a source":
