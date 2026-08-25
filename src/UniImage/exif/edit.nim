@@ -522,8 +522,9 @@ proc replaceFile(path: string; data: openArray[byte]): bool =
     false
 
 proc writeExif*(path: string; e: ExifData; outPath = ""): bool =
-  ## File wrapper over `writeExifBytes`. JPEG: rebuild the APP1 segment, preserving
-  ## everything else. Standalone TIFF: write the serialized block. Returns false
+  ## File wrapper over `writeExifBytes`. JPEG: rebuild the APP1 segment,
+  ## preserving everything else. Standalone TIFF: write the serialized block.
+  ## PNG, WebP, HEIC and AVIF: replace the Exif payload in place. Returns false
   ## on unsupported input or write failure.
   let dst = if outPath.len > 0: outPath else: path
   let output = writeExifBytes(readWholeFile(path), e)
@@ -569,8 +570,10 @@ proc stripMetadataBytes*(data: openArray[byte]): seq[byte] {.contractual.} =
     result = stripMetadataBytesImpl(data)
 
 proc stripMetadata*(inPath, outPath: string): bool =
-  ## File wrapper over `stripMetadataBytes`. Returns false on unsupported input
-  ## or write failure.
+  ## File wrapper over `stripMetadataBytes`. JPEG: drop APP1, APP13 and COM.
+  ## PNG: drop eXIf, tEXt, iTXt and zTXt. WebP: drop EXIF and XMP. HEIC and
+  ## AVIF: neutralize the Exif and XMP items in place. Returns false on
+  ## unsupported input or write failure.
   let output = stripMetadataBytes(readWholeFile(inPath))
   if output.len == 0: return false
   replaceFile(outPath, output)
