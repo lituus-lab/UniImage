@@ -126,12 +126,12 @@ task clib, "C shared library":
        " src/UniImage/c_api.nim"
 
 task clibStatic, "C static library":
-  exec "nim c --path:src --app:staticlib --noMain --mm:arc -d:release -o:" & staticLib &
+  exec "nim c --path:src --app:staticlib -d:staticNoAutoInit --noMain --mm:arc -d:release -o:" & staticLib &
        " src/UniImage/c_api.nim"
 
 task clibMsvc, "C static library, MSVC ABI (Windows Python extension)":
   # CPython on Windows is MSVC-built and cannot link MinGW output.
-  exec "nim c --path:src --cc:vcc --app:staticlib --noMain --mm:arc -d:release" &
+  exec "nim c --path:src --cc:vcc --app:staticlib -d:staticNoAutoInit --noMain --mm:arc -d:release" &
        " -o:UniImage.lib src/UniImage/c_api.nim"
 
 # Nim's MinGW toolchain names it mingw32-make.

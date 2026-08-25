@@ -94,16 +94,61 @@ proc buildMetaHandle(m: Metadata): MetaHandle =
 
 {.push cdecl, exportc, dynlib.}
 
+
+# A shared library runs NimMain from DllMain (Windows) or an ELF constructor;
+# a static one has neither, so nothing initializes the Nim runtime. The first
+# entry point then enters Nim code whose globals were never set up and the
+# process faults. The static-library tasks pass -d:staticNoAutoInit; shared
+# builds must not, or NimMain runs twice.
+when defined(staticNoAutoInit):
+  # A once primitive, not a plain flag: two threads reaching an entry point
+  # together would both see the flag unset, both call NimMain, and the second
+  # would enter Nim code the first had not finished initializing. The platform
+  # primitives block the losers until the winner returns, which a flag cannot.
+  #
+  # C statics, not Nim globals: module initialization would reset a Nim one and
+  # NimMain would run again. NimMain is declared here too — the generated
+  # prototype comes after this section.
+  {.emit: """/*VARSECTION*/
+void NimMain(void);
+#ifdef _WIN32
+#  include <windows.h>
+static INIT_ONCE ui_runtime_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK ui_runtime_init(PINIT_ONCE o, PVOID p, PVOID *c) {
+  (void)o; (void)p; (void)c; NimMain(); return TRUE;
+}
+static void ui_runtime_ensure(void) {
+  InitOnceExecuteOnce(&ui_runtime_once, ui_runtime_init, NULL, NULL);
+}
+#else
+#  include <pthread.h>
+static pthread_once_t ui_runtime_once = PTHREAD_ONCE_INIT;
+static void ui_runtime_init(void) { NimMain(); }
+static void ui_runtime_ensure(void) {
+  pthread_once(&ui_runtime_once, ui_runtime_init);
+}
+#endif
+""".}
+  template ensureRuntime() =
+    {.emit: "  ui_runtime_ensure();".}
+else:
+  template ensureRuntime() = discard
+
+
 proc ui_exif_init() =
   ## Initialise the Nim runtime. Must be called once before any other function.
+  ensureRuntime()
   try:
     NimMain()
   except CatchableError, Defect:
     discard
 
-proc ui_exif_abi_version(): cint = cint(UniImageExifAbiVersion)
+proc ui_exif_abi_version(): cint =
+  ensureRuntime()
+  cint(UniImageExifAbiVersion)
 
 proc ui_exif_strerror(code: cint): cstring =
+  ensureRuntime()
   case code
   of 0: cstring"ok"
   of 1: cstring"io error"
@@ -117,6 +162,7 @@ proc ui_exif_read_file(path: cstring; outHandle: ptr pointer): cint =
   ## Parse metadata from `path`. On success stores an opaque handle (free with
   ## ui_exif_meta_free) and returns UI_EXIF_OK even when the file carries no
   ## metadata (check ui_exif_is_valid). Returns UI_EXIF_ERR_IO on failure.
+  ensureRuntime()
   if path == nil or outHandle == nil: return UI_EXIF_ERR_FORMAT
   outHandle[] = nil
   try:
@@ -133,6 +179,7 @@ proc ui_exif_read_buffer(data: ptr uint8; length: csize_t;
     outHandle: ptr pointer): cint =
   ## Parse metadata from an in-memory buffer the caller owns (not copied).
   ## Same contract as ui_exif_read_file. The buffer need only outlive this call.
+  ensureRuntime()
   if outHandle == nil: return UI_EXIF_ERR_FORMAT
   outHandle[] = nil
   if data == nil or length == 0 or length > csize_t(high(
@@ -150,15 +197,18 @@ proc ui_exif_read_buffer(data: ptr uint8; length: csize_t;
     UI_EXIF_ERR_IO
 
 proc ui_exif_is_valid(h: pointer): cint =
+  ensureRuntime()
   if not containsHandle(metaHandles, h): return 0
   if metaOf(h).valid: 1 else: 0
 
 proc ui_exif_tag_count(h: pointer): csize_t =
+  ensureRuntime()
   if not containsHandle(metaHandles, h): return 0
   csize_t(metaOf(h).tags.len)
 
 proc ui_exif_tag_at(h: pointer; i: csize_t; name, value: ptr cstring): cint =
   ## Name/value of the i-th tag (0-based, sorted). Pointers are owned by `h`.
+  ensureRuntime()
   if not containsHandle(metaHandles, h) or name == nil or value == nil:
     return UI_EXIF_ERR_FORMAT
   if i > csize_t(high(int)): return UI_EXIF_ERR_FORMAT
@@ -170,6 +220,7 @@ proc ui_exif_tag_at(h: pointer; i: csize_t; name, value: ptr cstring): cint =
 
 proc ui_exif_get_tag(h: pointer; key: cstring): cstring =
   ## Value of tag `key`, or NULL if absent. Pointer is owned by `h`.
+  ensureRuntime()
   if not containsHandle(metaHandles, h) or key == nil: return nil
   try:
     let hh = metaOf(h)
@@ -180,6 +231,7 @@ proc ui_exif_get_tag(h: pointer; key: cstring): cstring =
 
 proc ui_exif_get_gps(h: pointer; lat, lon, alt: ptr cdouble): cint =
   ## 1 and fills the provided (non-NULL) out-params if GPS is present, else 0.
+  ensureRuntime()
   if not containsHandle(metaHandles, h): return 0
   let hh = metaOf(h)
   if not hh.hasGps: return 0
@@ -190,11 +242,13 @@ proc ui_exif_get_gps(h: pointer; lat, lon, alt: ptr cdouble): cint =
 
 proc ui_exif_get_orientation(h: pointer): cint =
   ## Raw EXIF Orientation (1..8), or 0 if absent.
+  ensureRuntime()
   if not containsHandle(metaHandles, h): return 0
   cint(metaOf(h).orientation)
 
 proc ui_exif_to_json(h: pointer): cstring =
   ## Pretty-printed JSON view (built lazily, cached). Pointer owned by `h`.
+  ensureRuntime()
   if not containsHandle(metaHandles, h): return nil
   try:
     let hh = metaOf(h)
@@ -218,12 +272,14 @@ proc ui_exif_to_json(h: pointer): cstring =
     nil
 
 proc ui_exif_meta_free(h: pointer) =
+  ensureRuntime()
   if unregisterHandle(metaHandles, h): GC_unref(metaOf(h))
 
 # --- strip -----------------------------------------------------------------
 
 proc ui_exif_strip_file(inPath, outPath: cstring): cint =
   ## Copy `inPath` to `outPath` without metadata (JPEG/PNG/WebP/HEIC/AVIF).
+  ensureRuntime()
   if inPath == nil or outPath == nil: return UI_EXIF_ERR_FORMAT
   try:
     if stripMetadata($inPath, $outPath): UI_EXIF_OK else: UI_EXIF_ERR_UNSUP
@@ -235,6 +291,7 @@ proc ui_exif_strip_buffer(data: ptr uint8; length: csize_t;
   ## Strip metadata in memory. On success allocates *outData (free it with
   ## ui_exif_buffer_free) and sets *outLen. UI_EXIF_ERR_UNSUP if the container is
   ## unsupported/malformed; the input buffer is never modified.
+  ensureRuntime()
   if outData == nil or outLen == nil: return UI_EXIF_ERR_FORMAT
   outData[] = nil
   outLen[] = 0
@@ -255,11 +312,13 @@ proc ui_exif_strip_buffer(data: ptr uint8; length: csize_t;
 
 proc ui_exif_buffer_free(buffer: ptr uint8) =
   ## Free a buffer returned by ui_exif_strip_buffer. NULL is a no-op.
+  ensureRuntime()
   if buffer != nil: deallocShared(buffer)
 
 # --- edit / write ----------------------------------------------------------
 
 proc ui_exif_edit_open(path: cstring; outHandle: ptr pointer): cint =
+  ensureRuntime()
   if path == nil or outHandle == nil: return UI_EXIF_ERR_FORMAT
   outHandle[] = nil
   try:
@@ -279,6 +338,7 @@ proc ui_exif_edit_open_buffer(data: ptr uint8; length: csize_t;
   ## bytes; they are copied into the handle so the input need only outlive this
   ## call). Mutate with the ui_exif_set_* / ui_exif_strip_all functions, then
   ## serialize with ui_exif_edit_write_buffer. Free with ui_exif_edit_free.
+  ensureRuntime()
   if outHandle == nil: return UI_EXIF_ERR_FORMAT
   outHandle[] = nil
   if data == nil or length == 0 or length > csize_t(high(
@@ -298,6 +358,7 @@ proc ui_exif_edit_open_buffer(data: ptr uint8; length: csize_t;
     UI_EXIF_ERR_IO
 
 proc ui_exif_set_artist(h: pointer; v: cstring) =
+  ensureRuntime()
   if not containsHandle(editHandles, h) or v == nil: return
   try:
     editOf(h).data.setArtist($v)
@@ -305,6 +366,7 @@ proc ui_exif_set_artist(h: pointer; v: cstring) =
     discard
 
 proc ui_exif_set_software(h: pointer; v: cstring) =
+  ensureRuntime()
   if not containsHandle(editHandles, h) or v == nil: return
   try:
     editOf(h).data.setSoftware($v)
@@ -313,6 +375,7 @@ proc ui_exif_set_software(h: pointer; v: cstring) =
 
 proc ui_exif_set_datetime(h: pointer; v: cstring) =
   ## Expects "YYYY:MM:DD HH:MM:SS".
+  ensureRuntime()
   if not containsHandle(editHandles, h) or v == nil: return
   try:
     editOf(h).data.setDateTimeOriginal($v)
@@ -320,6 +383,7 @@ proc ui_exif_set_datetime(h: pointer; v: cstring) =
     discard
 
 proc ui_exif_set_gps(h: pointer; lat, lon, alt: cdouble) =
+  ensureRuntime()
   if not containsHandle(editHandles, h): return
   try:
     editOf(h).data.setGps(float(lat), float(lon), float(alt))
@@ -329,6 +393,7 @@ proc ui_exif_set_gps(h: pointer; lat, lon, alt: cdouble) =
 proc ui_exif_edit_set_tag(h: pointer; name, value: cstring): cint =
   ## Generic write: set EXIF tag `name` to `value` (parsed into the tag's natural
   ## type). Returns UI_EXIF_OK, or UI_EXIF_ERR_UNSUP for an unknown tag / bad value.
+  ensureRuntime()
   if not containsHandle(editHandles, h) or name == nil or value == nil:
     return UI_EXIF_ERR_FORMAT
   try:
@@ -338,6 +403,7 @@ proc ui_exif_edit_set_tag(h: pointer; name, value: cstring): cint =
     UI_EXIF_ERR_IO
 
 proc ui_exif_strip_all(h: pointer) =
+  ensureRuntime()
   if not containsHandle(editHandles, h): return
   try:
     editOf(h).data.stripAll()
@@ -348,6 +414,7 @@ proc ui_exif_edit_write(h: pointer; outPath: cstring): cint =
   ## Write the edited EXIF. If `outPath` is NULL/empty, writes in place. Only
   ## file-backed handles (from ui_exif_edit_open) can write to disk; buffer-backed
   ## handles must use ui_exif_edit_write_buffer.
+  ensureRuntime()
   if not containsHandle(editHandles, h): return UI_EXIF_ERR_FORMAT
   try:
     let eh = editOf(h)
@@ -363,6 +430,7 @@ proc ui_exif_edit_write_buffer(h: pointer; outData: ptr ptr uint8;
   ## return the new image buffer. On success allocates *outData (free it with
   ## ui_exif_buffer_free) and sets *outLen. UI_EXIF_ERR_UNSUP if the container is
   ## unsupported/too large; UI_EXIF_ERR_FORMAT if the handle is not buffer-backed.
+  ensureRuntime()
   if outData == nil or outLen == nil: return UI_EXIF_ERR_FORMAT
   outData[] = nil
   outLen[] = 0
@@ -382,10 +450,12 @@ proc ui_exif_edit_write_buffer(h: pointer; outData: ptr ptr uint8;
     UI_EXIF_ERR_IO
 
 proc ui_exif_edit_free(h: pointer) =
+  ensureRuntime()
   if unregisterHandle(editHandles, h): GC_unref(editOf(h))
 
 proc ui_version(): cstring =
   ## Static engine version string; do not free.
+  ensureRuntime()
   cstring(UniImageVersion)
 
 # ============================================================================
@@ -504,9 +574,12 @@ proc rotateOpFromCint(op: cint): RotateOp =
   else:
     raise UniImageException(code: uiInvalidArg, msg: "ui_image: bad rotate op")
 
-proc ui_image_abi_version(): cint = cint(UniImageImageAbiVersion)
+proc ui_image_abi_version(): cint =
+  ensureRuntime()
+  cint(UniImageImageAbiVersion)
 
 proc ui_image_strerror(code: cint): cstring =
+  ensureRuntime()
   case code
   of 0: cstring"ok"
   of 2: cstring"bad argument / unrecognized / truncated"
@@ -517,6 +590,7 @@ proc ui_image_strerror(code: cint): cstring =
 proc ui_image_from_pixels(width, height, colorspace: cint; data: ptr uint8;
     length: csize_t; outHandle: ptr pointer): cint =
   ## Build an owned image by copying a packed 8-bit pixel buffer.
+  ensureRuntime()
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT
   outHandle[] = nil
   if width <= 0 or height <= 0 or colorspace < UI_IMAGE_CS_GRAY or
@@ -549,6 +623,7 @@ proc ui_image_decode_buffer(data: ptr uint8; length: csize_t; fmt: cint;
   ## (PNG/JPEG/BMP/QOI/PNM/GIF/PCX/WebP/TIFF); `UI_IMAGE_FMT_TGA`/`WEBP`/`TIFF`
   ## decode those formats directly (TGA has no magic; the others skip sniffing).
   ## On success stores an opaque handle (free with ui_image_free).
+  ensureRuntime()
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT
   outHandle[] = nil
   if data == nil or length == 0 or length > csize_t(high(int)):
@@ -581,6 +656,7 @@ proc ui_image_thumbnail(data: ptr uint8; length: csize_t;
   ## 8-bit image, without a full container decode. On success stores an opaque
   ## handle (free with ui_image_free). `UI_IMAGE_ERR_UNSUP` when the container
   ## has no EXIF segment or no embedded thumbnail.
+  ensureRuntime()
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT
   outHandle[] = nil
   if data == nil or length == 0 or length > csize_t(high(int)):
@@ -604,6 +680,7 @@ proc ui_image_encode(h: pointer; fmt: cint; quality: cint;
   ## Encode the image as `fmt` (PNG/JPEG/BMP/QOI/PNM/TGA). `quality` (1..100)
   ## applies to JPEG only. On success allocates *outData (free with
   ## ui_image_buffer_free) and sets *outLen.
+  ensureRuntime()
   if outData == nil or outLen == nil: return UI_IMAGE_ERR_FORMAT
   outData[] = nil
   outLen[] = 0
@@ -626,24 +703,29 @@ proc ui_image_encode(h: pointer; fmt: cint; quality: cint;
     UI_IMAGE_ERR_FORMAT
 
 proc ui_image_width(h: pointer): cint =
+  ensureRuntime()
   if not containsHandle(imageHandles, h): return 0
   cint(imgOf(h).img.width)
 
 proc ui_image_height(h: pointer): cint =
+  ensureRuntime()
   if not containsHandle(imageHandles, h): return 0
   cint(imgOf(h).img.height)
 
 proc ui_image_channels(h: pointer): cint =
+  ensureRuntime()
   if not containsHandle(imageHandles, h): return 0
   cint(imgOf(h).img.channels)
 
 proc ui_image_get_colorspace(h: pointer): cint =
+  ensureRuntime()
   if not containsHandle(imageHandles, h): return UI_IMAGE_CS_GRAY
   cint(ord(imgOf(h).img.colorspace))
 
 proc ui_image_pixels(h: pointer; outPtr: ptr ptr uint8;
     outLen: ptr csize_t): cint =
   ## Borrow the pixel buffer (no copy). *outPtr is valid until `h` is freed.
+  ensureRuntime()
   if outPtr == nil or outLen == nil: return UI_IMAGE_ERR_FORMAT
   outPtr[] = nil
   outLen[] = 0
@@ -657,6 +739,7 @@ proc ui_image_pixels(h: pointer; outPtr: ptr ptr uint8;
 proc ui_image_composite_over(destination, source: pointer; x, y,
     opacity: cint): cint =
   ## Mutate an owned RGBA destination with deterministic source-over blending.
+  ensureRuntime()
   if not containsHandle(imageHandles, destination) or
       not containsHandle(imageHandles, source) or opacity < 0 or opacity > 255:
     return UI_IMAGE_ERR_FORMAT
@@ -673,6 +756,7 @@ proc ui_image_composite_over(destination, source: pointer; x, y,
 
 proc ui_image_resize(h: pointer; w, height: cint; filter: cint;
     outHandle: ptr pointer): cint =
+  ensureRuntime()
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT
   outHandle[] = nil
   if not containsHandle(imageHandles, h) or w <= 0 or height <= 0:
@@ -695,6 +779,7 @@ proc ui_image_resize(h: pointer; w, height: cint; filter: cint;
 
 proc ui_image_crop(h: pointer; x, y, w, height: cint;
     outHandle: ptr pointer): cint =
+  ensureRuntime()
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT
   outHandle[] = nil
   if not containsHandle(imageHandles, h): return UI_IMAGE_ERR_FORMAT
@@ -712,6 +797,7 @@ proc ui_image_crop(h: pointer; x, y, w, height: cint;
     UI_IMAGE_ERR_FORMAT
 
 proc ui_image_rotate(h: pointer; op: cint; outHandle: ptr pointer): cint =
+  ensureRuntime()
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT
   outHandle[] = nil
   if not containsHandle(imageHandles, h): return UI_IMAGE_ERR_FORMAT
@@ -733,6 +819,7 @@ proc ui_image_apply_orientation(h: pointer; orientation: cint;
     outHandle: ptr pointer): cint =
   ## Apply an EXIF Orientation value (1..8) to a decoded image. The returned
   ## handle owns an independent pixel buffer, including for orientation 1.
+  ensureRuntime()
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT
   outHandle[] = nil
   if not containsHandle(imageHandles, h) or orientation < 1 or orientation > 8:
@@ -754,6 +841,7 @@ proc ui_image_extract_palette(h: pointer; n: cint; algo: cstring;
     space: int32; opts: ptr UiQuantizeOpts; outHandle: ptr pointer): cint =
   ## Extract a UniColor palette. NULL `algo`, space 0 and NULL `opts` select
   ## UniColor's deterministic defaults.
+  ensureRuntime()
   if outHandle == nil: return UI_IMAGE_ERR_FORMAT
   outHandle[] = nil
   if not containsHandle(imageHandles, h) or n < 1:
@@ -784,10 +872,12 @@ proc ui_image_extract_palette(h: pointer; n: cint; algo: cstring;
     UI_IMAGE_ERR_FORMAT
 
 proc ui_palette_len(h: pointer): csize_t =
+  ensureRuntime()
   if not containsHandle(paletteHandles, h): return 0
   csize_t(paletteOf(h).palette.len)
 
 proc ui_palette_color_at(h: pointer; i: csize_t; outColor: ptr UiColor): cint =
+  ensureRuntime()
   if outColor == nil or not containsHandle(paletteHandles, h) or
       i > csize_t(high(int)):
     return UI_IMAGE_ERR_FORMAT
@@ -797,26 +887,32 @@ proc ui_palette_color_at(h: pointer; i: csize_t; outColor: ptr UiColor): cint =
   UI_IMAGE_OK
 
 proc ui_palette_tag(h: pointer): cint =
+  ensureRuntime()
   if not containsHandle(paletteHandles, h): return 0
   cint(ord(paletteOf(h).palette.tag))
 
 proc ui_palette_intent(h: pointer): cint =
+  ensureRuntime()
   if not containsHandle(paletteHandles, h): return 0
   cint(ord(paletteOf(h).palette.intent))
 
 proc ui_palette_seed(h: pointer): int64 =
+  ensureRuntime()
   if not containsHandle(paletteHandles, h): return 0
   paletteOf(h).palette.seed
 
 proc ui_palette_free(h: pointer) =
+  ensureRuntime()
   if unregisterHandle(paletteHandles, h): GC_unref(paletteOf(h))
 
 proc ui_image_free(h: pointer) =
+  ensureRuntime()
   if unregisterHandle(imageHandles, h): GC_unref(imgOf(h))
 
 proc ui_image_buffer_free(p: ptr uint8; len: csize_t) =
   ## Free a buffer returned by ui_image_encode. NULL is a no-op. `len` is
   ## ignored (kept for symmetry with the allocator).
+  ensureRuntime()
   if p != nil: deallocShared(p)
 
 {.pop.}
