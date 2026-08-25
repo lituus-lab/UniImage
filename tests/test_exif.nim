@@ -2,9 +2,10 @@
 # Copyright 2026 lituus-lab
 ## EXIF/XMP/IPTC round-trip tests over the C-ABI-free Nim surface.
 ## Self-contained: builds a minimal JPEG in memory, no fixture files.
-import std/[unittest, json, tables, options, strutils, os]
+import std/[unittest, json, tables, options, strutils, os, times]
 import UniImage/exif
 import UniImage/exif/xmp
+import UniImage/exif/edit
 
 ## A minimal JPEG carrying one EXIF APP1 with Make="UniImage" and Orientation=1.
 const minimalJpeg: seq[byte] = block:
@@ -249,3 +250,41 @@ suite "XMP preserving merge":
     let parsed = parseXmp(mergeXmp(original, patch))
     check parsed.title == "Keep"
     check parsed.description.len == 0
+
+suite "a TIFF container takes an EXIF write":
+  ## What a vendor RAW is: DNG, NEF, CR2, ARW, RW2 and ORF all carry their
+  ## sensor data in a TIFF container, so this is the path a date correction
+  ## on one would take. The fixture is generated, not photographed --
+  ## tests/fixtures/gen_synthetic_raw.sh regenerates it.
+  const Raw = currentSourcePath.parentDir / "fixtures" / "synthetic-raw.tiff"
+
+  test "the EXIF a TIFF carries is read":
+    let meta = readMetadata(Raw)
+    check meta.isValid
+    check meta.cameraModel == "lituus-lab Synthetic RAW Camera"
+    check meta.creationDate.format("yyyy-MM-dd") == "2019-03-14"
+    check abs(meta.gpsLatitude - 45.9) < 0.001
+
+  test "a rewritten date reads back, and the other tags survive it":
+    let target = getTempDir() /
+      ("uniimage-raw-" & $getCurrentProcessId() & ".tiff")
+    defer: removeFile(target)
+    var data = parseExif(Raw)
+    data.setDateTimeOriginal("2021:07:04 12:00:00")
+    check writeExif(Raw, data, target)
+    let after = readMetadata(target)
+    check after.creationDate.format("yyyy-MM-dd HH:mm:ss") ==
+      "2021-07-04 12:00:00"
+    # Rewriting one tag must not drop the rest: a RAW carries lens and
+    # authorship data a correction has no business discarding.
+    check after.cameraModel == "lituus-lab Synthetic RAW Camera"
+    check abs(after.gpsLatitude - 45.9) < 0.001
+
+  test "stripping is refused rather than half-done":
+    # No TIFF branch in the strip dispatch, so it reports failure instead of
+    # writing a file it did not clean.
+    let target = getTempDir() /
+      ("uniimage-rawstrip-" & $getCurrentProcessId() & ".tiff")
+    check not stripMetadata(Raw, target)
+
+
