@@ -705,7 +705,8 @@ proc writeExifOrientation*(path: string; orientation: int): bool =
 
 proc writeExifDateTimeOriginal*(path: string; dateTime: string): bool =
   ## Updates the EXIF DateTimeOriginal (0x9003) and DateTime (0x0132) in a JPEG
-  ## or TIFF file **in-place**.  ``dateTime`` is parsed and rewritten as
+  ## or TIFF file **in-place**, and in the EXIF item of an ISO base media
+  ## one.  ``dateTime`` is parsed and rewritten as
   ## ``"yyyy:MM:dd HH:mm:ss"`` ASCII (19 chars + null = 20 bytes).
   ## Returns ``true`` on success.
   ##
@@ -746,7 +747,14 @@ proc writeExifDateTimeOriginal*(path: string; dateTime: string): bool =
     tiffOffset = 0
     blockLength = data.len
   else:
-    return false
+    # An ISO base media file -- HEIC, AVIF, and Canon's CR3 -- keeps its EXIF
+    # as a TIFF block in an item of the `meta` box. Once located it is patched
+    # exactly as the other two are: the bytes are the same width, so the box
+    # sizes and the item offsets around them do not move.
+    let embedded = findExifTiffInIsobmff(data)
+    if embedded <= 0: return false
+    tiffOffset = embedded
+    blockLength = data.len - embedded
   let endianChar = char(data[tiffOffset])
   let endian = if endianChar == 'I': LittleEndian else: BigEndian
   let firstIfdOffset = int(readUint32(data, tiffOffset + 4, endian))

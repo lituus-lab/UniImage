@@ -6,6 +6,7 @@ import std/[unittest, json, tables, options, strutils, os, times]
 import UniImage/exif
 import UniImage/exif/xmp
 import UniImage/exif/edit
+import UniImage/formats
 
 ## A minimal JPEG carrying one EXIF APP1 with Make="UniImage" and Orientation=1.
 const minimalJpeg: seq[byte] = block:
@@ -297,6 +298,25 @@ suite "a TIFF container takes an EXIF write":
     # Everything the file said about itself is still there.
     check after.cameraModel == "lituus-lab Synthetic RAW Camera"
     check abs(after.gpsLatitude - 45.9) < 0.001
+
+  test "an ISO base media file takes the same patch":
+    # HEIC, AVIF and Canon's CR3 keep their EXIF as a TIFF block inside a
+    # `meta` item. The bytes written are the same width as the ones they
+    # replace, so no box size and no item offset moves around them.
+    let source = currentSourcePath.parentDir / "fixtures" / "dated.heic"
+    let target = getTempDir() /
+      ("uniimage-heic-" & $getCurrentProcessId() & ".heic")
+    defer: removeFile(target)
+    copyFile(source, target)
+    let before = readFile(target).len
+    check writeExifDateTimeOriginal(target, "2021-07-04 12:00:00")
+    check readFile(target).len == before
+    check readMetadata(target).creationDate.format("yyyy-MM-dd") == "2021-07-04"
+    # The picture is still readable, which is the point of patching in place
+    # rather than rebuilding the container.
+    var bytes: seq[byte]
+    for c in readFile(target): bytes.add byte(c)
+    check decodeImage(bytes).width > 0
 
   test "stripping is refused rather than half-done":
     # No TIFF branch in the strip dispatch, so it reports failure instead of

@@ -21,3 +21,12 @@ exiftool -overwrite_original \
   -GPSLatitude=45.9 -GPSLatitudeRef=N \
   -GPSLongitude=6.6 -GPSLongitudeRef=E \
   "$out"
+
+# dated.heic: the ISO base media counterpart, for the in-place date patch.
+# apple.heic carries no date, so a test using it would assert nothing.
+cp "$(dirname "$0")/apple.heic" "$(dirname "$0")/dated.heic"
+exiftool -overwrite_original \
+  -DateTimeOriginal="2019:03:14 09:26:53" \
+  -ModifyDate="2019:03:14 09:26:53" \
+  -Make="lituus-lab" -Model="Synthetic Still Camera" \
+  "$(dirname "$0")/dated.heic"
