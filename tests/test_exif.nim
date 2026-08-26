@@ -265,20 +265,20 @@ suite "a TIFF container takes an EXIF write":
     check meta.creationDate.format("yyyy-MM-dd") == "2019-03-14"
     check abs(meta.gpsLatitude - 45.9) < 0.001
 
-  test "a rewritten date reads back, and the other tags survive it":
+  test "one carrying pixels is refused rather than replaced by its metadata":
+    # Serializing the parsed EXIF back is a whole file only for a TIFF that is
+    # nothing but metadata. This one has image strips, as every vendor RAW
+    # does, and writing the block alone would hand back a file with the tags
+    # intact and the picture gone -- measured on a Nikon NEF at 17,780,638
+    # bytes in and 108,878 out, the embedded thumbnail and nothing else.
     let target = getTempDir() /
       ("uniimage-raw-" & $getCurrentProcessId() & ".tiff")
     defer: removeFile(target)
     var data = parseExif(Raw)
     data.setDateTimeOriginal("2021:07:04 12:00:00")
-    check writeExif(Raw, data, target)
-    let after = readMetadata(target)
-    check after.creationDate.format("yyyy-MM-dd HH:mm:ss") ==
-      "2021-07-04 12:00:00"
-    # Rewriting one tag must not drop the rest: a RAW carries lens and
-    # authorship data a correction has no business discarding.
-    check after.cameraModel == "lituus-lab Synthetic RAW Camera"
-    check abs(after.gpsLatitude - 45.9) < 0.001
+    check not writeExif(Raw, data, target)
+    # Refused means nothing was written, not written badly.
+    check not fileExists(target)
 
   test "stripping is refused rather than half-done":
     # No TIFF branch in the strip dispatch, so it reports failure instead of

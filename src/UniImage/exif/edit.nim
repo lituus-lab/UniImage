@@ -461,6 +461,30 @@ proc embedExifInJpeg(orig, tiff: openArray[byte]): seq[byte] =
   if not inserted: result.add app1
   if i < orig.len: result.add orig[i ..< orig.len]
 
+proc carriesImageStrips(data: openArray[byte]): bool =
+  ## Whether a TIFF holds pixel data this writer does not reproduce.
+  ##
+  ## Serializing the parsed EXIF back is a whole file only for a TIFF that is
+  ## nothing but metadata. A photographic TIFF, and every vendor RAW built on
+  ## one, keeps its pixels in strips or tiles the parse never looked at --
+  ## writing the block alone would hand back the thumbnail and drop the
+  ## picture. Measured on a Nikon NEF: 17,780,638 bytes in, 108,878 out.
+  if data.len < 8: return false
+  let endian = if data[0] == 0x49: LittleEndian else: BigEndian
+  var offset = int(readUint32(data, 4, endian))
+  var seen = 0
+  # A chain rather than one directory: a RAW keeps the full-size image in a
+  # later entry and the thumbnail in the first.
+  while offset > 0 and offset + 2 <= data.len and seen < 16:
+    let ifd = readIFD(data, offset, 0, endian)
+    # StripOffsets, StripByteCounts, TileOffsets, TileByteCounts.
+    for id in [0x0111'u16, 0x0117'u16, 0x0144'u16, 0x0145'u16]:
+      if ifd.tags.hasKey(id): return true
+    inc seen
+    let following = int(ifd.nextIfdOffset)
+    if following <= 0 or following >= data.len: break
+    offset = following
+
 proc writeExifBytesImpl(orig: openArray[byte]; e: ExifData): seq[byte] =
   ## Embed `e` back into the original image bytes and return the new buffer, or
   ## `@[]` on an unsupported or oversized container. Pure in-memory, no file I/O.
@@ -473,6 +497,10 @@ proc writeExifBytesImpl(orig: openArray[byte]; e: ExifData): seq[byte] =
     return embedExifInJpeg(orig, tiff)
   elif (orig[0] == 0x49 and orig[1] == 0x49) or
        (orig[0] == 0x4D and orig[1] == 0x4D):
+    # Only a TIFF that is metadata and nothing else. One carrying pixels is
+    # refused rather than replaced by its own EXIF block, which is what the
+    # line below would otherwise do to every RAW handed to it.
+    if carriesImageStrips(orig): return @[]
     return tiff
   elif isPng(orig):
     return replacePngExif(orig, tiff) # @[] on failure (propagated)
