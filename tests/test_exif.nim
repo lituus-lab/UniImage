@@ -280,6 +280,24 @@ suite "a TIFF container takes an EXIF write":
     # Refused means nothing was written, not written badly.
     check not fileExists(target)
 
+  test "a date is patched in place, leaving the pixels where they are":
+    # Twenty ASCII bytes replaced by twenty ASCII bytes: no offset moves, so
+    # the image strips and the maker note are not even read. This is what
+    # makes correcting a date safe on a file `writeExif` must refuse.
+    let target = getTempDir() /
+      ("uniimage-inplace-" & $getCurrentProcessId() & ".tiff")
+    defer: removeFile(target)
+    copyFile(Raw, target)
+    let before = readFile(target).len
+    check writeExifDateTimeOriginal(target, "2021-07-04 12:00:00")
+    check readFile(target).len == before
+    let after = readMetadata(target)
+    check after.creationDate.format("yyyy-MM-dd HH:mm:ss") ==
+      "2021-07-04 12:00:00"
+    # Everything the file said about itself is still there.
+    check after.cameraModel == "lituus-lab Synthetic RAW Camera"
+    check abs(after.gpsLatitude - 45.9) < 0.001
+
   test "stripping is refused rather than half-done":
     # No TIFF branch in the strip dispatch, so it reports failure instead of
     # writing a file it did not clean.

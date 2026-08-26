@@ -705,9 +705,15 @@ proc writeExifOrientation*(path: string; orientation: int): bool =
 
 proc writeExifDateTimeOriginal*(path: string; dateTime: string): bool =
   ## Updates the EXIF DateTimeOriginal (0x9003) and DateTime (0x0132) in a JPEG
-  ## file **in-place**.  ``dateTime`` is parsed and rewritten as
+  ## or TIFF file **in-place**.  ``dateTime`` is parsed and rewritten as
   ## ``"yyyy:MM:dd HH:mm:ss"`` ASCII (19 chars + null = 20 bytes).
   ## Returns ``true`` on success.
+  ##
+  ## In place is what makes this safe for a vendor RAW, which is a TIFF whose
+  ## bulk is image strips: the replacement is the same twenty bytes as the
+  ## value it overwrites, so no offset moves and nothing outside those bytes is
+  ## rewritten. `writeExif` refuses such a file for the opposite reason -- it
+  ## rebuilds the block and cannot carry the pixels across.
   let fileSize = try: getFileSize(path) except CatchableError: 0'i64
   if fileSize == 0: return false
   var data = newSeq[byte](fileSize)
@@ -722,12 +728,25 @@ proc writeExifDateTimeOriginal*(path: string; dateTime: string): bool =
     if f != nil: close(f)
     return false
 
-  if data.len < 2 or data[0] != 0xFF or data[1] != 0xD8: return false
+  if data.len < 8: return false
 
-  let blockInfo = findExifAPP1(data)
-  if blockInfo.offset <= 0: return false
-
-  let tiffOffset = blockInfo.offset
+  # Where the TIFF block starts and how far it runs: the APP1 segment in a
+  # JPEG, the file itself in a TIFF.
+  var tiffOffset = -1
+  var blockLength = 0
+  if data[0] == 0xFF and data[1] == 0xD8:
+    let blockInfo = findExifAPP1(data)
+    if blockInfo.offset <= 0: return false
+    tiffOffset = blockInfo.offset
+    blockLength = blockInfo.length
+  elif (data[0] == 0x49 and data[1] == 0x49 and data[2] == 0x2A and
+        data[3] == 0x00) or
+       (data[0] == 0x4D and data[1] == 0x4D and data[2] == 0x00 and
+        data[3] == 0x2A):
+    tiffOffset = 0
+    blockLength = data.len
+  else:
+    return false
   let endianChar = char(data[tiffOffset])
   let endian = if endianChar == 'I': LittleEndian else: BigEndian
   let firstIfdOffset = int(readUint32(data, tiffOffset + 4, endian))
@@ -759,48 +778,45 @@ proc writeExifDateTimeOriginal*(path: string; dateTime: string): bool =
   var dateTimeTagOffset = -1
   var dateTimeOriginalTagOffset = -1
 
-  # Scan IFD0
+  # Every copy, not the first: a RAW carries DateTimeOriginal in IFD0 as well
+  # as in the Exif IFD, and patching one of the two would leave the file
+  # disagreeing with itself about when the picture was taken.
+  var dateTagOffsets: seq[int]
+  var exifIfdOffsets: seq[int]
+
+  proc collect(ifdAbsolute: int) =
+    if ifdAbsolute + 2 > data.len: return
+    let count = int(readUint16(data, ifdAbsolute, endian))
+    var tagOffset = ifdAbsolute + 2
+    for _ in 0 ..< count:
+      if tagOffset + 12 > data.len: break
+      case readUint16(data, tagOffset, endian)
+      of 0x8769'u16:
+        exifIfdOffsets.add tiffOffset + int(readUint32(data, tagOffset + 8, endian))
+      of 0x9003'u16, 0x0132'u16, 0x9004'u16:
+        dateTagOffsets.add tagOffset
+      else: discard
+      tagOffset += 12
+
   var currentIfdOffset = firstIfdOffset
   var visited = initTable[int, bool]()
-  while currentIfdOffset != 0 and currentIfdOffset < blockInfo.length:
+  while currentIfdOffset != 0 and currentIfdOffset < blockLength:
     if visited.hasKey(currentIfdOffset): break
     visited[currentIfdOffset] = true
     let ifdAbs = tiffOffset + currentIfdOffset
     if ifdAbs + 2 > data.len: break
+    collect(ifdAbs)
     let numTags = int(readUint16(data, ifdAbs, endian))
-    var tagOffset = ifdAbs + 2
-    for i in 0 .. numTags - 1:
-      if tagOffset + 12 > data.len: break
-      let tagId = readUint16(data, tagOffset, endian)
-      if tagId == 0x8769'u16:
-        exifIfdOffset = int(readUint32(data, tagOffset + 8, endian))
-      elif tagId == 0x0132'u16:
-        dateTimeTagOffset = tagOffset
-      tagOffset += 12
     if ifdAbs + 2 + numTags * 12 + 4 > data.len: break
     currentIfdOffset = int(readUint32(data, ifdAbs + 2 + numTags * 12, endian))
 
-  # Scan Exif IFD for DateTimeOriginal (0x9003)
-  if exifIfdOffset >= 0:
-    let exifIfdAbs = tiffOffset + exifIfdOffset
-    if exifIfdAbs + 2 <= data.len:
-      let numTags = int(readUint16(data, exifIfdAbs, endian))
-      var tagOffset = exifIfdAbs + 2
-      for i in 0 .. numTags - 1:
-        if tagOffset + 12 > data.len: break
-        let tagId = readUint16(data, tagOffset, endian)
-        if tagId == 0x9003'u16:
-          dateTimeOriginalTagOffset = tagOffset
-          break
-        tagOffset += 12
+  for exifAbs in exifIfdOffsets:
+    collect(exifAbs)
 
   var patched = false
-  if dateTimeOriginalTagOffset >= 0:
-    if patchDateTag(dateTimeOriginalTagOffset):
-      patched = true
-  if dateTimeTagOffset >= 0:
-    if patchDateTag(dateTimeTagOffset):
-      patched = true
+  for tagOffset in dateTagOffsets:
+    if patchDateTag(tagOffset): patched = true
+
 
   if not patched: return false
 
