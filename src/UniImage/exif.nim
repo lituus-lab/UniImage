@@ -37,6 +37,9 @@ type
     allTags*: Table[string, string]
 
 proc parseDateTime*(s: string): DateTime =
+  ## An EXIF timestamp, trying the formats cameras actually write. The
+  ## standard says `yyyy:MM:dd HH:mm:ss`; enough files use dashes, or omit the
+  ## time, that reading only the standard one loses real data.
   let formats = [
     "yyyy:MM:dd HH:mm:ss",
     "yyyy-MM-dd HH:mm:ss",

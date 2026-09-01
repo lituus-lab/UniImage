@@ -69,6 +69,10 @@ proc allLi(node: XmlNode): seq[string] =
     if t.len > 0: result.add t
 
 proc parseXmp*(xml: string): XmpData =
+  ## Parse an XMP packet. Malformed XML yields an empty result rather than
+  ## raising: XMP travels inside image files written by anything, and a
+  ## packet that will not parse is a reason to fall back to EXIF, not to
+  ## refuse the file.
   var root: XmlNode
   try: root = parseXml(newStringStream(xml))
   except CatchableError: return
@@ -112,6 +116,9 @@ proc readXmpBytes*(data: openArray[byte]): XmpData =
   parseXmp(xml)
 
 proc readXmp*(path: string): XmpData =
+  ## The XMP packet of a file on disk, whichever container holds it -- PNG
+  ## in an `iTXt` chunk, WebP in the chunk whose four-character code is
+  ## `XMP` followed by a space, JPEG in an APP1 segment.
   let data = readWholeFile(path)
   if isPng(data):
     let xml = findXmpInPng(data) # iTXt "XML:com.adobe.xmp"
@@ -149,6 +156,9 @@ const DcStructured = ["dc:title", "dc:description", "dc:rights", "dc:creator",
                       "dc:subject"]
 
 proc buildXmp*(x: XmpData): string =
+  ## Serialise back to an XMP packet, declaring every namespace actually
+  ## used rather than a fixed list: a reader that meets an undeclared prefix
+  ## is entitled to reject the whole packet.
   result = "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n"
   result.add "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n"
   result.add " <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n"

@@ -29,4 +29,4 @@ proc loadThumbnail*(data: openArray[byte]): Image[uint8] =
         msg: "loadThumbnail: no embedded EXIF thumbnail")
   decodeJpeg(jpg)
 
-const UniImageVersion* = "1.0.0"
+const UniImageVersion* = "1.1.0"

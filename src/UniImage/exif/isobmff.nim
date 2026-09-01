@@ -28,6 +28,11 @@ proc boxSizeAt(data: openArray[byte]; i, endAt: int): int =
   int(box.size)
 
 proc findExifInHEIC*(data: openArray[byte]): int =
+  ## Offset of the TIFF header inside a HEIC file, or -1. Found by scanning
+  ## for the literal `Exif` and then, within the next 64 bytes, a TIFF byte
+  ## order marker -- `II*` or `MM\0`. HEIC nests EXIF far enough inside its
+  ## box structure that walking the boxes to it costs more than the scan, and
+  ## the two markers together are specific enough not to hit by accident.
   const TiffSearchWindow = 64
   for i in 0 ..< data.len - 10:
     if data[i] == 0x45 and data[i+1] == 0x78 and
@@ -42,6 +47,9 @@ proc findExifInHEIC*(data: openArray[byte]): int =
   return -1
 
 proc parseIsobmff*(data: openArray[byte]): VideoMeta =
+  ## Metadata from an ISO base media file -- MP4, MOV, HEIC. Reads the box
+  ## tree rather than scanning, because these fields are addressed by box
+  ## path and a scan would find the same four-character code in sample data.
   var res: VideoMeta
   var keysList: seq[string]
 

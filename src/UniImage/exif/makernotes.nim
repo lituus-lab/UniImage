@@ -76,6 +76,9 @@ proc toDecimals(s: string, decimals = 4): string =
   outp.join(" ")
 
 proc isAppleMakerNote*(raw: openArray[byte]): bool =
+  ## True when the MakerNote opens with Apple's header. MakerNote has no
+  ## standard structure at all: every vendor writes its own, and identifying
+  ## the vendor from the bytes is the only way in.
   if raw.len < 16: return false
   for i, c in AppleHeader:
     if raw[i] != byte(c): return false
@@ -246,6 +249,10 @@ const NikonTags = {
 
 proc parseNikonMakerNote*(data: openArray[byte]; mnOffset, base: int;
                           endian: TiffEndianness): Table[string, string] =
+  ## Tags from a Nikon MakerNote. The block has no standard
+  ## structure -- each vendor invented its own -- so this reads
+  ## Nikon's layout specifically and returns nothing for anything
+  ## else, rather than guessing at bytes it does not recognise.
   result = initTable[string, string]()
   if mnOffset < 0 or mnOffset + 2 > data.len: return
   var ifdAt = mnOffset # absolute position of the IFD
@@ -333,6 +340,10 @@ proc panaPowerTime(centisec: int): string =
 
 proc parsePanasonicMakerNote*(data: openArray[byte]; mnOffset, base: int;
                               endian: TiffEndianness): Table[string, string] =
+  ## Tags from a Panasonic MakerNote. The block has no standard
+  ## structure -- each vendor invented its own -- so this reads
+  ## Panasonic's layout specifically and returns nothing for anything
+  ## else, rather than guessing at bytes it does not recognise.
   result = initTable[string, string]()
   const hdr = "Panasonic"
   if mnOffset < 0 or mnOffset + 12 > data.len: return
@@ -425,6 +436,10 @@ const
   FujiExposureWarning = {0: "Good", 1: "Bad exposure"}.toTable
 
 proc parseFujiMakerNote*(data: openArray[byte]; mnOffset: int): Table[string, string] =
+  ## Tags from a Fujifilm MakerNote. The block has no standard
+  ## structure -- each vendor invented its own -- so this reads
+  ## Fujifilm's layout specifically and returns nothing for anything
+  ## else, rather than guessing at bytes it does not recognise.
   result = initTable[string, string]()
   const hdr = "FUJIFILM"
   if mnOffset < 0 or mnOffset + 12 > data.len: return
@@ -690,6 +705,10 @@ proc addPentaxCameraSettings(res: var Table[string, string]; cs: openArray[byte]
 
 proc parsePentaxMakerNote*(data: openArray[byte]; mnOffset, base: int;
                            endian: TiffEndianness; model = ""): Table[string, string] =
+  ## Tags from a Pentax MakerNote. The block has no standard
+  ## structure -- each vendor invented its own -- so this reads
+  ## Pentax's layout specifically and returns nothing for anything
+  ## else, rather than guessing at bytes it does not recognise.
   result = initTable[string, string]()
   const hdr = "AOC\0"
   if mnOffset < 0 or mnOffset + 6 > data.len: return
@@ -848,6 +867,10 @@ proc ratToDecimal(s: string): string =
 
 proc parseOlympusMakerNote*(data: openArray[byte]; mnOffset, base: int;
                             endian: TiffEndianness): Table[string, string] =
+  ## Tags from a Olympus MakerNote. The block has no standard
+  ## structure -- each vendor invented its own -- so this reads
+  ## Olympus's layout specifically and returns nothing for anything
+  ## else, rather than guessing at bytes it does not recognise.
   result = initTable[string, string]()
   const hdr = "OLYMP\0"
   if mnOffset < 0 or mnOffset + 8 > data.len: return
@@ -932,6 +955,10 @@ const
 
 proc parseCasioMakerNote*(data: openArray[byte]; mnOffset, base: int;
                           endian: TiffEndianness): Table[string, string] =
+  ## Tags from a Casio MakerNote. The block has no standard
+  ## structure -- each vendor invented its own -- so this reads
+  ## Casio's layout specifically and returns nothing for anything
+  ## else, rather than guessing at bytes it does not recognise.
   result = initTable[string, string]()
   if mnOffset < 0 or mnOffset + 2 > data.len: return
   const qvc = "QVC\0" # Type 2 header — not decoded here
@@ -1043,6 +1070,10 @@ proc minoltaArr(tag: Tag; idx: int): int =
 
 proc parseMinoltaMakerNote*(data: openArray[byte]; mnOffset, base: int;
                             endian: TiffEndianness): Table[string, string] =
+  ## Tags from a Minolta MakerNote. The block has no standard
+  ## structure -- each vendor invented its own -- so this reads
+  ## Minolta's layout specifically and returns nothing for anything
+  ## else, rather than guessing at bytes it does not recognise.
   result = initTable[string, string]()
   if mnOffset < 0 or mnOffset + 2 > data.len: return
   let ifd = readIFD(data, mnOffset, base, endian)       # bare IFD, outer endian
@@ -1123,6 +1154,10 @@ proc afterColon(s: string): string =
 
 proc parseSigmaMakerNote*(data: openArray[byte]; mnOffset, base: int;
                           endian: TiffEndianness): Table[string, string] =
+  ## Tags from a Sigma MakerNote. The block has no standard
+  ## structure -- each vendor invented its own -- so this reads
+  ## Sigma's layout specifically and returns nothing for anything
+  ## else, rather than guessing at bytes it does not recognise.
   result = initTable[string, string]()
   const hdr = "SIGMA\0\0\0"
   if mnOffset < 0 or mnOffset + 10 > data.len: return

@@ -9,10 +9,14 @@ import UniImage/core
 const MaxCodecDim* = 1 shl 30 # 1 Gpx — anything larger is a hostile/malformed file.
 
 proc readU16le*(data: openArray[byte]; i: int): uint16 {.inline.} =
+  ## Two little-endian bytes at `i`; zero if that would read past the end.
+  ## Codec headers are parsed straight from a file, so out of range is a
+  ## normal case here, not an error.
   if i < 0 or i > data.len - 2: return 0
   uint16(data[i]) or (uint16(data[i + 1]) shl 8)
 
 proc readU32le*(data: openArray[byte]; i: int): uint32 {.inline.} =
+  ## Four little-endian bytes at `i`, zero out of range.
   if i < 0 or i > data.len - 4: return 0
   uint32(data[i]) or (uint32(data[i + 1]) shl 8) or
     (uint32(data[i + 2]) shl 16) or (uint32(data[i + 3]) shl 24)
@@ -21,10 +25,13 @@ proc readI32le*(data: openArray[byte]; i: int): int32 {.inline.} =
   cast[int32](readU32le(data, i))
 
 proc readU16be*(data: openArray[byte]; i: int): uint16 {.inline.} =
+  ## Two big-endian bytes at `i`, zero out of range. PNG and JPEG are
+  ## big-endian; BMP and most RIFF containers are not.
   if i < 0 or i > data.len - 2: return 0
   (uint16(data[i]) shl 8) or uint16(data[i + 1])
 
 proc readU32be*(data: openArray[byte]; i: int): uint32 {.inline.} =
+  ## Four big-endian bytes at `i`, zero out of range.
   if i < 0 or i > data.len - 4: return 0
   (uint32(data[i]) shl 24) or (uint32(data[i + 1]) shl 16) or
     (uint32(data[i + 2]) shl 8) or uint32(data[i + 3])
@@ -64,6 +71,9 @@ proc putU32be*(b: var seq[byte]; v: uint32) {.inline.} =
   b.add byte((v shr 8) and 0xFF); b.add byte(v and 0xFF)
 
 proc requireLen*(data: openArray[byte]; need: int; msg: string) {.inline.} =
+  ## Raise `uiTruncated` unless the buffer holds at least `need` bytes. The
+  ## one place a short read is an error rather than a zero: a caller that has
+  ## already committed to a structure cannot carry on without it.
   if data.len < need:
     raise UniImageException(code: uiTruncated, msg: msg)
 

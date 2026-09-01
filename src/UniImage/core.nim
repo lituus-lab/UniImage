@@ -36,6 +36,13 @@ type
 
 const ChannelCount*: array[Colorspace, int] = [1, 3, 4, 4, 3, 1]
 
+func channelsOf*(cs: Colorspace): int {.inline.} =
+  ## How many channels a colorspace stores. Named rather than indexed so a
+  ## postcondition can say what it means -- and so the rendered contract does
+  ## not put `[cs]` in a doc comment, where the generator reads it as a link
+  ## reference.
+  ChannelCount[cs]
+
 proc validPackedImage*[P](image: Image[P]): bool {.inline.} =
   ## Return whether dimensions, colorspace, channel count, and packed storage
   ## describe one complete image without overflowing an `int` length.
@@ -60,7 +67,7 @@ proc newImage*[P](width, height: int; cs: Colorspace = csRgb): Image[
     width > 0 and height > 0
   ensure:
     result.width == width and result.height == height
-    result.data.len == width * height * ChannelCount[cs]
+    result.data.len == width * height * channelsOf(cs)
     result.colorspace == cs
   body:
     result.width = width

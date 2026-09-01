@@ -34,15 +34,28 @@ type
 
 # --- constructors ----------------------------------------------------------
 
-proc asciiVal*(s: string): ExifValue = ExifValue(typ: ttAscii, text: s)
+proc asciiVal*(s: string): ExifValue =
+  ## An ASCII tag value. TIFF stores these NUL-terminated; the terminator is
+  ## added on serialisation, so `s` is the text without it.
+  ExifValue(typ: ttAscii, text: s)
 proc shortVal*(v: varargs[int]): ExifValue =
+  ## One or more SHORT values (16-bit). `varargs` because a tag may be a
+  ## single number or a small vector, and the type is the same either way.
   result.typ = ttShort
   for x in v: result.nums.add int64(x)
 proc longVal*(v: varargs[int]): ExifValue =
+  ## One or more LONG values (32-bit), as `shortVal` but wider.
   result.typ = ttLong
   for x in v: result.nums.add int64(x)
-proc byteVal*(b: openArray[byte]): ExifValue = ExifValue(typ: ttByte, bytes: @b)
+proc byteVal*(b: openArray[byte]): ExifValue =
+  ## A BYTE tag value. Copied, not borrowed: the value outlives the buffer a
+  ## caller parsed it from.
+  ExifValue(typ: ttByte, bytes: @b)
 proc rationalSeq*(pairs: seq[(int, int)]): ExifValue =
+  ## RATIONAL values, each a numerator and a denominator. EXIF stores
+  ## exposure times and GPS coordinates this way rather than as floats, so a
+  ## `1/250` stays exactly that and does not acquire a rounding error on the
+  ## way through.
   result.typ = ttRational
   for (n, d) in pairs: result.rats.add (int64(n), int64(d))
 
@@ -418,13 +431,21 @@ proc serializeImpl(e: ExifData): seq[byte] =
   result.add gpsBytes
   result.add dataPool
 
+func startsWithIntelMarker(tiff: openArray[byte]): bool {.inline.} =
+  ## True when the buffer opens with `II`, TIFF's little-endian byte order.
+  tiff.len >= 2 and tiff[0] == 0x49 and tiff[1] == 0x49
+
 proc serialize*(e: ExifData): seq[byte] {.contractual.} =
   ## Emit a valid little-endian TIFF carrying IFD0 + Exif/GPS sub-IFDs.
   require:
     e.ifd0.len <= int(high(uint16)) and e.exif.len <= int(high(uint16)) and
       e.gps.len <= int(high(uint16))
   ensure:
-    result.len >= 8 and result[0] == 0x49 and result[1] == 0x49
+    # `II` -- the TIFF byte-order marker for little-endian, which is what this
+    # writer emits. Named, because `result[0] == 0x49` says the byte and not
+    # the meaning, and because a bracket in a rendered contract is read as a
+    # link reference by the doc generator.
+    result.len >= 8 and startsWithIntelMarker(result)
   body:
     result = serializeImpl(e)
 

@@ -11,5 +11,9 @@
 ## without any decoder, and asking for pixels raises rather than guessing.
 when defined(macosx) and not defined(noAppleCodecs):
   switch("define", "appleCodecs")
-switch("path", "../UniChecksum/src")
-switch("path", "../UniCompress/src")
+
+## No `switch("path", "../UniChecksum/src")` here, nor for UniCompress. Both
+## are declared `requires`, so nimble resolves them at the pinned version; a
+## relative path to a sibling checkout shadows that with whatever happens to be
+## in the working tree next door, and does not exist at all in CI, which checks
+## out one repository.

@@ -8,6 +8,9 @@ import ./zlibutil
 const PngSig = [0x89'u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
 
 proc isPng*(data: openArray[byte]): bool =
+  ## True when the buffer opens with PNG's eight-byte signature. Those eight
+  ## bytes are chosen to catch a transfer that mangled line endings or stripped
+  ## the high bit, which is why the check is all of them and not the first two.
   if data.len < 8: return false
   for k in 0 .. 7:
     if data[k] != PngSig[k]: return false

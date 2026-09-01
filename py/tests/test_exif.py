@@ -7,7 +7,7 @@ import uniimage
 
 
 def test_version():
-    assert uniimage.version() == "1.0.0"
+    assert uniimage.version() == "1.1.0"
 
 
 def test_abi_version():
