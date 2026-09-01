@@ -313,10 +313,13 @@ suite "a TIFF container takes an EXIF write":
     check readFile(target).len == before
     check readMetadata(target).creationDate.format("yyyy-MM-dd") == "2021-07-04"
     # The picture is still readable, which is the point of patching in place
-    # rather than rebuilding the container.
-    var bytes: seq[byte]
-    for c in readFile(target): bytes.add byte(c)
-    check decodeImage(bytes).width > 0
+    # rather than rebuilding the container. Only where there is a HEIF decoder
+    # to read it with: the Apple codecs are the sole one this library has, so
+    # elsewhere the check would test the absent decoder, not the patch.
+    when defined(macosx) and defined(appleCodecs):
+      var bytes: seq[byte]
+      for c in readFile(target): bytes.add byte(c)
+      check decodeImage(bytes).width > 0
 
   test "stripping is refused rather than half-done":
     # No TIFF branch in the strip dispatch, so it reports failure instead of
