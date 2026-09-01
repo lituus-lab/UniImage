@@ -220,7 +220,11 @@ task cexample, "C demo":
   done "cexample"
 
 task pyDeps, "Install Python build deps (setuptools, Cython, pytest) if missing":
-  exec "python3 -m pip install --break-system-packages --quiet --upgrade \"setuptools>=77\" wheel \"Cython>=3.0.0\" pytest"
+  exec "python3 -m pip install --break-system-packages --quiet setuptools wheel \"Cython>=3.0.0\" pytest"
+  # Ubuntu ships a setuptools that predates PEP 639 and cannot parse the SPDX
+  # licence pyproject.toml declares. pip refuses to uninstall a distro- or
+  # brew-managed package, so install over it rather than --upgrade it.
+  exec "python3 -m pip install --break-system-packages --quiet --ignore-installed \"setuptools>=77\""
   done "pyDeps"
 
 # The extension links the vcc static lib on Windows, the shared lib elsewhere.
