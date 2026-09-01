@@ -20,7 +20,9 @@ UNAME := $(shell uname -s 2>/dev/null)
 ifeq ($(UNAME),Darwin)
   LDLIBS := -framework CoreFoundation -framework CoreGraphics -framework ImageIO
 else
-  LDLIBS :=
+  # glibc keeps pow, atan2, cbrt and the rest out of libc; macOS folds them in,
+  # which is why an empty list held here for so long.
+  LDLIBS := -lm
 endif
 
 ifeq ($(OS),Windows_NT)

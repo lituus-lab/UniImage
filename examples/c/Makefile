@@ -14,11 +14,10 @@ CFLAGS := -I$(ROOT)/include -O2 -Wall -Wextra -std=c11
 LIB    := $(ROOT)/libUniImage.a
 # libUniImage.a references uncompress/compress2 (zlibutil.nim libz FFI); a C
 # consumer must supply libz itself. The 1b pure-Nim Deflate will drop this.
-ifeq ($(OS),Windows_NT)
-  LIBS := -lz
-else
-  LIBS := -lz
-endif
+# libm too: the engine's mathematics calls pow, atan2 and friends. glibc keeps
+# them out of libc, so the link fails on Linux while macOS never noticed.
+# Keep system libraries after the archive so one-pass Unix linkers resolve them.
+LIBS := -lz -lm
 
 # Same as the C test: the library carries the macOS system HEIF decoder, whose
 # calls into the system frameworks the consumer resolves.
