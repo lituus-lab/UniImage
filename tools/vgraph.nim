@@ -1,14 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 lituus-lab
-## Enforces the dependency directions declared in vgraph.cfg (ADR-0001):
-## no module imports a higher layer, no `requires` names an undeclared engine.
+## Enforces the dependency directions declared in vgraph.cfg: no module
+## imports a higher layer, no `requires` names an undeclared sibling package
+## (ADR-0001).
 ## Line-based scan of import/from/include, which covers the forms Nim sources
 ## actually use; a macro-built import would slip past it.
 import std/[os, strformat, strutils]
 
-const
-  Cfg = "vgraph.cfg"
-  Nimble = "UniImage.nimble"
+const Cfg = "vgraph.cfg"
+
+proc manifest(): string =
+  ## The repo's own .nimble, found rather than named: this tool is the same
+  ## file in every Uni* repo, and a hard-coded name is the one line that would
+  ## have to differ -- so it is the one line that would drift.
+  for path in walkFiles("*.nimble"):
+    return path
+  ""
 
 proc section(name: string): seq[string] =
   ## Entries under `[name]`, in file order.
@@ -32,14 +39,50 @@ proc layerOf(path: string, order: seq[string]): int =
 
 proc layerOfModule(modulePath: string, order: seq[string]): int =
   ## Index of the layer owning an imported module path, or -1. Matches a layer
-  ## name against any path component, so `UniImage/spaces/oklab` resolves to
-  ## the `spaces` layer and a bare `c_api` to the `c_api` layer.
+  ## name against any path component, so `Lib/spaces/oklab` resolves to the
+  ## `spaces` layer and a bare `c_api` to the `c_api` layer. A `std/`-prefixed
+  ## import is Nim stdlib (external infra), never a family layer — without this
+  ## guard `std/math` would collide with the `math` layer.
+  if modulePath.startsWith("std/"):
+    return -1
   let parts = modulePath.split({'/', '\\'})
   for i, name in order:
     for part in parts:
       if part == name or part == name & ".nim":
         return i
   -1
+
+proc expandGrouped(body: string): string =
+  ## Flatten grouped imports while keeping the path prefix on every member:
+  ## `std/[os, strutils]` -> `std/os, std/strutils`. Top-level commas separate
+  ## distinct imports; commas inside `[...]` separate members sharing the prefix
+  ## before the bracket. Without this, `std/[math, os]` would emit bare `math`
+  ## and collide with the `math` layer in `layerOfModule`.
+  result = ""
+  var prefix = ""
+  var cur = ""
+  var depth = 0
+  for ch in body:
+    case ch
+    of '[':
+      depth = 1
+      prefix = cur.strip
+      if prefix.len > 0 and prefix[^1] != '/':
+        prefix &= '/'
+      cur = ""
+    of ']':
+      if cur.strip.len > 0:
+        result &= prefix & cur.strip & ","
+      depth = 0
+      cur = ""
+    of ',':
+      if cur.strip.len > 0:
+        result &= prefix & cur.strip & ","
+      cur = ""
+    else:
+      cur &= ch
+  if cur.strip.len > 0:
+    result &= cur.strip & ","
 
 iterator importedModules(path: string): string =
   ## Full slash-separated path of every module the file pulls in. Directory
@@ -51,8 +94,7 @@ iterator importedModules(path: string): string =
     elif line.startsWith("include "): body = line[8 .. ^1]
     elif line.startsWith("from "): body = line[5 .. ^1].split(" import ")[0]
     else: continue
-    # `std/[os, strutils]` -> the bracket members carry the meaningful names.
-    body = body.multiReplace(("[", ","), ("]", ","))
+    body = expandGrouped(body)
     for item in body.split(','):
       let module = item.strip
       if module.len > 0:
@@ -95,10 +137,11 @@ proc main() =
       if other > own:
         violations.add &"{path}: imports {module} ({order[other]}) from {order[own]}"
 
-  # Family DAG: only engines listed under [engines] may appear in `requires`.
+  # Only packages listed under [engines] may appear in `requires` (ADR-0001).
   let allowed = section("engines")
   var engines = 0
-  if fileExists(Nimble):
+  let Nimble = manifest()
+  if Nimble.len > 0 and fileExists(Nimble):
     for package in requiredPackages(Nimble):
       if not package.startsWith("Uni"): continue
       inc engines
