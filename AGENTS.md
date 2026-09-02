@@ -30,6 +30,10 @@ CI: 3-OS Nim, C ABI, and Python matrices, followed by clean artifact consumers.
   `-d:danger`: the ABI parses untrusted image bytes, so Nim's bounds checks
   are kept as defense-in-depth (every entry point also validates handles and
   traps `CatchableError` + `Defect` at the boundary).
+- A change to `c_api.nim` is verified by `ctest`, `pyTest` and, where there
+  is one, `wasmTest`: three linkages, three runtime bootstraps. A green
+  `ctest` alone proved nothing the day the shared build lost its
+  initializer and every registry answered with the sentinel.
 - C symbols use the `ui_exif_*` metadata and `ui_image_*` raster namespaces.
   lib `libUniImage`; header `UniImage.h`.
 - `core` (image model) is the lowest layer. `compress`, formats, process, and
