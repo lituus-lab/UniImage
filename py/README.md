@@ -15,7 +15,7 @@ EXIF data without first decoding the pixels.
 ## Install
 
 ```bash
-pip install uniimage
+pip install lituus-uniimage
 ```
 
 Prebuilt wheels include the native UniImage library for Linux, macOS, and
