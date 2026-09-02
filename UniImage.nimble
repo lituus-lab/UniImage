@@ -190,18 +190,18 @@ task clib, "C shared library":
   # bounds/overflow checks are kept as a defense-in-depth backstop. Every ui_exif_*
   # entry point also validates handles/lengths itself and traps CatchableError +
   # Defect at the boundary.
-  exec "nim c --path:src --app:lib --noMain --mm:arc -d:release -o:" & sharedLib & macArgs &
+  exec "nim c --path:src --app:lib -d:noAutoInit --noMain --mm:arc -d:release -o:" & sharedLib & macArgs &
        " src/UniImage/c_api.nim"
   done "clib"
 
 task clibStatic, "C static library":
-  exec "nim c --path:src --app:staticlib -d:staticNoAutoInit --noMain --mm:arc -d:release -o:" & staticLib &
+  exec "nim c --path:src --app:staticlib -d:noAutoInit --noMain --mm:arc -d:release -o:" & staticLib &
        " src/UniImage/c_api.nim"
   done "clibStatic"
 
 task clibMsvc, "C static library, MSVC ABI (Windows Python extension)":
   # CPython on Windows is MSVC-built and cannot link MinGW output.
-  exec "nim c --path:src --cc:vcc --app:staticlib -d:staticNoAutoInit --noMain --mm:arc -d:release" &
+  exec "nim c --path:src --cc:vcc --app:staticlib -d:noAutoInit --noMain --mm:arc -d:release" &
        " -o:UniImage.lib src/UniImage/c_api.nim"
   done "clibMsvc"
 
