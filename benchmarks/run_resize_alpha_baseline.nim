@@ -27,7 +27,7 @@ proc phaseSummary(reports: seq[JsonNode]; phase: string): JsonNode =
     "run_mean_ms": means,
     "median_run_mean_ms": middle,
     "median_output_megapixels_per_second":
-      OutputPixels.float64 / 1_000.0 / middle
+    OutputPixels.float64 / 1_000.0 / middle
   }
 
 proc main() =

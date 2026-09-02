@@ -18,7 +18,7 @@ proc summary(samples: RunningStat; pixelsPerIteration: int): JsonNode =
     "min_ms": samples.min,
     "max_ms": samples.max,
     "megapixels_per_second":
-      pixelsPerIteration.float64 / 1_000.0 / samples.mean
+    pixelsPerIteration.float64 / 1_000.0 / samples.mean
   }
 
 proc fillSource(image: var Image[uint8]) =

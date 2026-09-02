@@ -20,7 +20,7 @@ proc summary(samples: RunningStat): JsonNode =
     "min_ms": samples.min,
     "max_ms": samples.max,
     "output_megapixels_per_second":
-      (TargetWidth * TargetHeight).float64 / 1_000.0 / samples.mean
+    (TargetWidth * TargetHeight).float64 / 1_000.0 / samples.mean
   }
 
 proc fill(image: var Image[uint8]; translucent: bool) =
