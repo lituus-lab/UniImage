@@ -137,11 +137,14 @@ else:
 
 proc ui_exif_init() =
   ## Initialise the Nim runtime. Must be called once before any other function.
+  ##
+  ## The work is `ensureRuntime`, which every entry point calls. It used to be
+  ## followed by a direct NimMain, so under -d:staticNoAutoInit the module
+  ## initializers ran twice, rebuilding every global while the first set was
+  ## still live -- and the flag meant to prevent it was itself a Nim global,
+  ## which that second run reset. Reproduced in UniColor: the second
+  ## `uc_palette_make` of a process died inside Nim's allocator.
   ensureRuntime()
-  try:
-    NimMain()
-  except CatchableError, Defect:
-    discard
 
 proc ui_exif_abi_version(): cint =
   ensureRuntime()
