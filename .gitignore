@@ -63,3 +63,7 @@ book/*.html
 
 # nimibook build output. `docs` copies it to pages/, which is what ships.
 book/__site/
+# the coverage build of the C consumer, and the gcov pair make leaves beside it
+tests/c/test_capi_cov
+tests/c/*.gcda
+tests/c/*.gcno
